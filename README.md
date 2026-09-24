@@ -134,10 +134,20 @@ configuration with `--clean-first`, and then runs CTest. The executable is:
 out/build/Release/visual_sim.exe
 ```
 
-Generate both datasets with:
+Generate both datasets with the one-click runner:
 
 ```powershell
-.\out\build\Release\visual_sim.exe .\datasets
+.\run.ps1
+```
+
+`run.ps1` checks for `out/build/Release/visual_sim.exe`. If the executable
+does not exist, it automatically invokes `build.ps1`, then runs the simulator
+and prints the absolute dataset output path.
+
+A custom output directory can also be supplied:
+
+```powershell
+.\run.ps1 -OutputDir D:\VisualSimData
 ```
 
 To remove the complete CMake build tree:
