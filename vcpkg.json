@@ -1,0 +1,13 @@
+{
+  "name": "visual-sim",
+  "version-string": "1.0.0",
+  "builtin-baseline": "6e856794aebd1ee877acb74c9264d9552903c6fe",
+  "dependencies": [
+    "eigen3",
+    {
+      "name": "opencv4",
+      "default-features": false,
+      "features": ["jpeg", "png"]
+    }
+  ]
+}
