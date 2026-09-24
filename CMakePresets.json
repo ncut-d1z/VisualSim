@@ -1,0 +1,29 @@
+{
+  "version": 6,
+  "configurePresets": [{
+    "name": "windows",
+    "displayName": "Windows x64 / vcpkg",
+    "generator": "Visual Studio 18 2026",
+    "architecture": "x64",
+    "binaryDir": "${sourceDir}/out/build",
+    "cacheVariables": {
+      "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "VCPKG_TARGET_TRIPLET": "x64-windows",
+      "VCPKG_INSTALLED_DIR": "D:/AppData/vcpkg_installed/VisualSim",
+      "BUILD_TESTING": "ON"
+    }
+  }],
+  "buildPresets": [{
+    "name": "windows",
+    "configurePreset": "windows",
+    "configuration": "Release"
+  }],
+  "testPresets": [{
+    "name": "windows",
+    "configurePreset": "windows",
+    "configuration": "Release",
+    "output": {
+      "outputOnFailure": true
+    }
+  }]
+}
