@@ -103,8 +103,58 @@ ctest --test-dir build --output-on-failure
 ./build/visual_sim ./datasets
 ```
 
-On Windows with vcpkg, provide an Eigen3/OpenCV toolchain in the normal CMake
-way and build the same target.
+### Windows 11 + CMake + vcpkg
+
+The Windows build environment follows
+`ncut-d1z/vis-spherical-flow`:
+
+- Windows 11 x64
+- Visual Studio 18 2026 with the C++ desktop workload
+- CMake >= 3.25
+- vcpkg manifest mode
+- `x64-windows` triplet
+- `VCPKG_ROOT` pointing to the vcpkg installation
+
+In an **x64 Developer PowerShell**:
+
+```powershell
+git clone https://github.com/microsoft/vcpkg C:\dev\vcpkg
+C:\dev\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+$env:VCPKG_ROOT = 'C:\dev\vcpkg'
+
+git clone https://github.com/ncut-d1z/VisualSim.git
+cd VisualSim
+.\build.ps1
+```
+
+`build.ps1` runs the `windows` configure preset, builds the Release
+configuration with `--clean-first`, and then runs CTest. The executable is:
+
+```text
+out/build/Release/visual_sim.exe
+```
+
+Generate both datasets with:
+
+```powershell
+.\out\build\Release\visual_sim.exe .\datasets
+```
+
+To remove the complete CMake build tree:
+
+```powershell
+.\clean.ps1
+```
+
+The preset follows the reference project and uses
+`D:/AppData/vcpkg_installed/VisualSim` as `VCPKG_INSTALLED_DIR`. If the
+machine does not use that drive/layout, edit or remove that cache variable in
+`CMakePresets.json`; vcpkg will then use its normal manifest-mode installed
+location.
+
+The vcpkg manifest uses the same pinned baseline as `vis-spherical-flow` and
+installs only the dependencies needed here: Eigen3 and OpenCV 4 with JPEG/PNG
+image-codec support.
 
 ## Coordinate convention
 
