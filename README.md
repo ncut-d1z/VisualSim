@@ -58,6 +58,7 @@ Running the generator creates:
 ```text
 datasets/
   forward_constant_velocity/
+    motion.yaml
     mav0/
       cam0/
         sensor.yaml
@@ -67,6 +68,7 @@ datasets/
         data.csv
       README.txt
   optical_axis_constant_rotation/
+    motion.yaml
     mav0/
       cam0/
         sensor.yaml
@@ -77,8 +79,28 @@ datasets/
       README.txt
 ```
 
-Ground truth contains timestamp, position, quaternion, linear velocity,
-linear acceleration, and body/camera-frame angular velocity.
+Each dataset also contains a top-level `motion.yaml`. It provides
+dataset-level motion ground truth, including the scenario name, duration,
+camera rate, constant-kinematics flag, true linear velocity in the world frame,
+true linear acceleration in the world frame, true angular velocity in the
+camera frame, and the initial/final poses. For example, the two main vector
+entries have the form:
+
+```yaml
+kinematics:
+  constant: true
+  true_linear_velocity:
+    frame: world
+    unit: m/s
+    value: [0, 0, 0.25]
+  true_angular_velocity:
+    frame: camera
+    unit: rad/s
+    value: [0, 0, 0]
+```
+
+The per-frame ground-truth CSV contains timestamp, position, quaternion, linear
+velocity, linear acceleration, and body/camera-frame angular velocity.
 
 The images are rendered from a deterministic asymmetric 3-D landmark field on
 three depth planes. This produces parallax in the forward-translation sequence
