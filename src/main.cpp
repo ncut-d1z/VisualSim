@@ -110,6 +110,58 @@ void WriteGroundTruthHeader(std::ofstream& out) {
          "w_RS_S_x [rad s^-1],w_RS_S_y [rad s^-1],w_RS_S_z [rad s^-1]\n";
 }
 
+void WriteMotionYaml(const fs::path& path, const Trajectory& trajectory,
+                     const CameraConfig& camera) {
+  std::ofstream out(path);
+  if (!out)
+    throw std::runtime_error("cannot write motion.yaml");
+
+  const Pose pose0 = trajectory.pose(0.0);
+  const Pose pose1 = trajectory.pose(trajectory.duration());
+  const auto kin = trajectory.kinematics(0.0);
+  const Eigen::Quaterniond q0_wc(pose0.R_wc);
+  const Eigen::Quaterniond q1_wc(pose1.R_wc);
+
+  out << std::setprecision(17);
+  out << "schema_version: 1\n";
+  out << "scenario: " << trajectory.name() << "\n";
+  out << "duration_s: " << trajectory.duration() << "\n";
+  out << "camera_rate_hz: " << camera.rate_hz << "\n";
+  out << "kinematics:\n";
+  out << "  constant: true\n";
+  out << "  true_linear_velocity:\n";
+  out << "    frame: world\n";
+  out << "    unit: m/s\n";
+  out << "    value: [" << kin.velocity_w.x() << ", " << kin.velocity_w.y()
+      << ", " << kin.velocity_w.z() << "]\n";
+  out << "  true_linear_acceleration:\n";
+  out << "    frame: world\n";
+  out << "    unit: m/s^2\n";
+  out << "    value: [" << kin.acceleration_w.x() << ", "
+      << kin.acceleration_w.y() << ", " << kin.acceleration_w.z() << "]\n";
+  out << "  true_angular_velocity:\n";
+  out << "    frame: camera\n";
+  out << "    unit: rad/s\n";
+  out << "    value: [" << kin.angular_velocity_c.x() << ", "
+      << kin.angular_velocity_c.y() << ", " << kin.angular_velocity_c.z()
+      << "]\n";
+  out << "initial_pose:\n";
+  out << "  position_w_m: [" << pose0.position_w.x() << ", "
+      << pose0.position_w.y() << ", " << pose0.position_w.z() << "]\n";
+  out << "  quaternion_wc_wxyz: [" << q0_wc.w() << ", " << q0_wc.x() << ", "
+      << q0_wc.y() << ", " << q0_wc.z() << "]\n";
+  out << "final_pose:\n";
+  out << "  position_w_m: [" << pose1.position_w.x() << ", "
+      << pose1.position_w.y() << ", " << pose1.position_w.z() << "]\n";
+  out << "  quaternion_wc_wxyz: [" << q1_wc.w() << ", " << q1_wc.x() << ", "
+      << q1_wc.y() << ", " << q1_wc.z() << "]\n";
+  out << "coordinate_convention:\n";
+  out << "  camera_axes: \"+X right, +Y down, +Z forward\"\n";
+  out << "  rotation: \"R_wc rotates camera-frame vectors into world frame\"\n";
+  out << "  note: \"Per-frame ground truth remains in "
+         "mav0/state_groundtruth_estimate0/data.csv\"\n";
+}
+
 void GenerateDataset(const fs::path& output_root, const Trajectory& trajectory,
                      const CameraConfig& camera) {
   const fs::path root = output_root / trajectory.name() / "mav0";
@@ -122,6 +174,7 @@ void GenerateDataset(const fs::path& output_root, const Trajectory& trajectory,
   fs::create_directories(gt_dir);
 
   WriteSensorYaml(cam0 / "sensor.yaml", camera);
+  WriteMotionYaml(root.parent_path() / "motion.yaml", trajectory, camera);
 
   std::ofstream cam_csv(cam0 / "data.csv");
   std::ofstream gt_csv(gt_dir / "data.csv");
