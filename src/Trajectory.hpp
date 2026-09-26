@@ -88,36 +88,51 @@ class ForwardConstantVelocity final : public Trajectory {
   Eigen::Vector3d forward_w_;
 };
 
-// Camera center is fixed. The camera rolls at a constant angular velocity
-// around its optical axis. With R0_wc = I, the optical axis is +Z.
+// Camera center is fixed. The camera rotates at a constant angular velocity
+// around a fixed axis expressed in the initial camera frame.
 class OpticalAxisConstantRotation final : public Trajectory {
  public:
+  // Compatibility overload for the original fixed-optical-axis API.
   OpticalAxisConstantRotation(double duration_s, double omega_rad_s,
                               const Eigen::Vector3d& position_w =
                                   Eigen::Vector3d::Zero(),
                               const Eigen::Matrix3d& R0_wc =
                                   Eigen::Matrix3d::Identity())
+      : OpticalAxisConstantRotation(duration_s, omega_rad_s,
+                                    Eigen::Vector3d::UnitZ(), position_w,
+                                    R0_wc) {}
+
+  OpticalAxisConstantRotation(double duration_s, double omega_rad_s,
+                              const Eigen::Vector3d& rotation_axis_c,
+                              const Eigen::Vector3d& position_w,
+                              const Eigen::Matrix3d& R0_wc)
       : Trajectory(duration_s),
         omega_rad_s_(omega_rad_s),
+        rotation_axis_c_(rotation_axis_c),
         position_w_(position_w),
         R0_wc_(R0_wc) {
     if (std::abs(omega_rad_s) < 1e-12) {
       throw std::invalid_argument("angular velocity must be non-zero");
     }
+    if (!(rotation_axis_c.norm() > 1e-12)) {
+      throw std::invalid_argument("rotation axis must be non-zero");
+    }
+    rotation_axis_c_.normalize();
   }
 
   Pose pose(double time_s) const override {
     const double t = clampTime(time_s);
-    // Right multiplication rotates the camera about its own +Z optical axis.
+    // Right multiplication rotates the camera about the fixed initial-camera
+    // axis supplied by the command line.
     const Eigen::Matrix3d R_roll =
-        Eigen::AngleAxisd(omega_rad_s_ * t, Eigen::Vector3d::UnitZ())
+        Eigen::AngleAxisd(omega_rad_s_ * t, rotation_axis_c_)
             .toRotationMatrix();
     return {position_w_, R0_wc_ * R_roll};
   }
 
   Kinematics kinematics(double /*time_s*/) const override {
     Kinematics k;
-    k.angular_velocity_c = omega_rad_s_ * Eigen::Vector3d::UnitZ();
+    k.angular_velocity_c = omega_rad_s_ * rotation_axis_c_;
     return k;
   }
 
@@ -125,10 +140,16 @@ class OpticalAxisConstantRotation final : public Trajectory {
 
   double omega() const noexcept { return omega_rad_s_; }
 
+  const Eigen::Vector3d& rotationAxis() const noexcept {
+    return rotation_axis_c_;
+  }
+
  private:
   double omega_rad_s_;
+  Eigen::Vector3d rotation_axis_c_;
   Eigen::Vector3d position_w_;
   Eigen::Matrix3d R0_wc_;
 };
 
 }  // namespace visualsim
+

@@ -28,16 +28,16 @@ Default parameters:
 - speed: 0.25 m/s
 - initial pose: identity / origin
 
-### 2. Constant rotation around the optical axis
+### 2. Constant pure rotation in a rectangular room
 
-The camera center is fixed while the camera rolls around its own +Z optical
-axis at constant angular velocity:
+The camera center is fixed while the camera rotates around a user-specified
+axis in the initial camera frame at constant angular velocity:
 
 ```text
 p_w(t)  = p_w(0)
-R_wc(t) = R_wc(0) Exp((omega t e_z)^)
+R_wc(t) = R_wc(0) Exp((omega t a_c)^)
 v_w     = 0
-omega_c = [0, 0, omega]^T
+omega_c = omega a_c
 ```
 
 Default parameters:
@@ -45,11 +45,15 @@ Default parameters:
 - duration: 8 s
 - camera rate: 20 Hz
 - angular velocity: 0.35 rad/s
+- rotation axis: (0, 0, 1), normalized internally
 - initial pose: identity / origin
 
-The phrase "沿着光轴做匀速圆周运动" is implemented as **constant rotation
-about the optical axis with a fixed camera center**, matching the stated
-constraint "相机位置不变".
+The pure-rotation scene uses the rectangular, densely sampled room from the
+reference implementation in
+[KaiserKatze/ros2-vio-node/src/VisualSim/Room.hpp](https://github.com/KaiserKatze/ros2-vio-node/blob/master/src/VisualSim/Room.hpp):
+10 m depth, 10 m width, 3 m height, with a 0.5 m boundary grid. The camera is
+placed at the room center, so the image contains wall, floor, and ceiling
+texture rather than only a few front-facing planes.
 
 ## Output
 
@@ -64,6 +68,9 @@ datasets/
         sensor.yaml
         data.csv
         data/*.png
+      imu0/
+        sensor.yaml
+        data.csv
       state_groundtruth_estimate0/
         data.csv
       README.txt
@@ -100,11 +107,16 @@ kinematics:
 ```
 
 The per-frame ground-truth CSV contains timestamp, position, quaternion, linear
-velocity, linear acceleration, and body/camera-frame angular velocity.
+velocity, linear acceleration, and body/camera-frame angular velocity.  The
+generated `imu0/data.csv` is EuRoC-compatible and contains noiseless gyroscope
+and specific-force samples at 200 Hz, so the dataset can be replayed by an
+IMU-fused MSCKF without adding machine-specific paths.
 
-The images are rendered from a deterministic asymmetric 3-D landmark field on
-three depth planes. This produces parallax in the forward-translation sequence
-and pure rotational image motion in the optical-axis sequence.
+The forward-translation images are rendered from a deterministic asymmetric
+3-D landmark field on three depth planes. The pure-rotation images use the
+deterministic rectangular-room boundary grid described above. Together these
+scenes produce parallax in the forward-translation sequence and pure
+rotational image motion in the rotation sequence.
 
 ## Build
 
@@ -122,7 +134,9 @@ sudo apt install build-essential cmake libeigen3-dev libopencv-dev
 cmake -S . -B build
 cmake --build build -j
 ctest --test-dir build --output-on-failure
-./build/visual_sim ./datasets
+./build/visual_sim ./datasets \
+  --angular-velocity-rad-per-sec 0.35 \
+  "--rotation-axis=(0,0,1)"
 ```
 
 ### Windows 11 + CMake + vcpkg
@@ -172,6 +186,24 @@ A custom output directory can also be supplied:
 .\run.ps1 -OutputDir D:\VisualSimData
 ```
 
+The pure-rotation angular velocity and axis can be selected from the command
+line. Use exactly one angular-velocity option; the axis is normalized after
+parsing:
+
+```powershell
+.\build\Release\visual_sim.exe D:\VisualSimData `
+  --angular-velocity-rad-per-sec 0.50 `
+  "--rotation-axis=(1,-2,4)"
+
+.\build\Release\visual_sim.exe D:\VisualSimData `
+  --angular-velocity-deg-per-sec 20 `
+  "--rotation-axis=(1,2,3)"
+```
+
+PowerShell requires quotes around the parenthesized option. The generated
+`optical_axis_constant_rotation/motion.yaml` records the normalized angular
+velocity vector and the room-centered initial pose for reproducibility.
+
 To remove the complete CMake build tree:
 
 ```powershell
@@ -197,3 +229,4 @@ The synthetic pinhole camera uses the conventional computer-vision frame:
 - +Z: optical axis / forward
 
 `R_wc` rotates vectors from camera coordinates into world coordinates.
+
