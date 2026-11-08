@@ -1,6 +1,6 @@
 # VisualSim 独立运行时库实施计划（IMPLEMENTATION_PLAN）
 
-> **本文件专门管理工程实施和源码融合。** 功能需求见 [SRS.md](SRS.md)，概要架构见 [HLD.md](HLD.md)，API/算法细节见 [LLD.md](LLD.md)。本轮只写文档，不修改生产代码、编译或执行测试。
+> **状态：v1 文档设计基线（经本轮审计整改后冻结），工程实施 P0–P6 尚未开展。** 本文件专门管理工程实施和源码融合。功能需求见 [SRS.md](SRS.md)，概要架构见 [HLD.md](HLD.md)，API/算法合同见 [LLD.md](LLD.md)。文档审计不代表生产代码实现或编译/测试通过。
 
 ## 1. 仓库写入边界与代码基线
 
@@ -18,7 +18,7 @@
 - **唯一产品需求来源**：[SRS.md](SRS.md) 的 FR-M/FR-S/FR-G/FR-C、NFR-01..07 与 AC-01..12；其中 Ubuntu 24.04、Linux-only、无 ROS、只限 Room、仅用户修改历史、0..N 相机、严格递增时间等均为已批准的边界。
 - **架构决策来源**：[HLD.md](HLD.md) 的历史解析器、两类模式与作用域、动态相机注册、门控生成、无计算结果缓存和风险权衡。
 - **实现合同来源**：[LLD.md](LLD.md) 的 API v1、Result/错误、时间与边界、相机/IMU 模型、Brownian-bridge 噪声、YAML schema v1 与 ABI/生命周期。
-- **审计依据与实际状态**：[AUDIT.md](AUDIT.md) 和 [AUDIT_PROGRESS.md](AUDIT_PROGRESS.md)。审计/文档整改状态与代码开发、测试结果分别记录，不互相替代。
+- **审计依据与实际状态**：[AUDIT.md](AUDIT.md) 和 [AUDIT_PROGRESS.md](AUDIT_PROGRESS.md)，两文件当前在 docs/ 中可访问；审计/文档整改状态与代码开发、测试结果分别记录，不互相替代。**若 P0 所读取的版本缺少审计文件或链接不可用，暂以 SRS/HLD/LLD/本计划和两个仓库当时的 HEAD 为只读基线，并记录缺失，先恢复审计文件再宣称审计闭环。**
 
 本计划**不重新定义**已批准的运动模式、坐标方向、校准公式或噪声算法；如发现设计冲突，应先在对应规范文件审计，再更新本计划任务。本项目是**单人开发**，不设置人员分工、日期排期、工时审批等多人项目管理要求。性能预算与性能验收已明确推迟到首次成功运行程序之后再讨论，不属于当前必须决定的事项。
 
@@ -54,7 +54,7 @@
 
 | 阶段 | 任务 | 可核验交付 |
 | --- | --- | --- |
-| P0 — 差异审查 | 重新查看两仓库当前 HEAD；核实来源文件增量、外参坐标方向、版本/依赖和目标 Room 的范围；冻结 event API 合同 | 实际迁移清单与版本记录，仅在目标仓库 |
+| P0 — 差异审查 | 重新查看两仓库当前 HEAD；复核**已冻结的 LLD v1 event API 合同**与实际源码的差异、外参坐标方向、依赖和 Room 边界；若需破坏性变更，先提出并明确升级 API/SONAME/schema 版本且同步 SRS/HLD/LLD/PLAN，不重复执行“冻结” | 实际迁移差异和版本记录，仅在目标仓库；保持来源仓库只读 |
 | P1 — Linux 独立库 | 共享库、公共头文件、CMake install/export、消费端示例、无 ROS；禁用 Windows，保留用户现有工具链 | .so 可按前缀安装，外部工程独立构建调用 |
 | P2 — 运动历史 | 两类互斥模式、BeginMotionMode/EndMotionEnd、同类覆盖、跨类组合；时间事件记录、段解析、物理量与作用域恢复；函数/YAML 同构 | 每个时间的 p/R/v/a/ω/α 正确，无运动中间结果缓存 |
 | P3 — 传感器历史 | 自动 camX 创建及改名、0..N 相机、默认 cam0、历史 K/T_BC/畸变与 imu0/T_BS/噪声，均实际影响输出 | 各相机个性化成像与 IMU 真值/噪声按历史修改生效 |
@@ -84,7 +84,7 @@
 
 ## 6. V 测试与验收追踪（仅规划，未执行）
 
-以下测试用例从 LLD 移入本**实施与验收计划**。测试命令与输出证据将在后续实际运行后登记；除延期的 V12 外，其他用例均为“未执行”。
+以下测试用例从 LLD 移入本**实施与验收计划**。V06 分为 V06-D（确定性逐元素）与 V06-S（冻结统计检验），其余编号保持不变。测试命令与输出证据将在后续实际运行后登记；除延期的 V12 外，其他用例均为“未执行”。
 
 | V 用例 | 验收检查 | 对应 AC | 状态 |
 | --- | --- | --- | --- |
@@ -93,7 +93,8 @@
 | V03 | 同类覆盖、跨类组合、嵌套 BeginMotionMode/EndMotionEnd，出栈不使 p/R 意外跳变 | AC-03 | 未执行 |
 | V04 | 静止、恒速、恒加速、圆周、纯旋转、多段拼接 p/R/v/a/ω/α 与解析公式一致 | AC-04 | 未执行 |
 | V05 | 默认 cam0 外参 (I3,0)、显式创建 camX、改名稳定 ID 和序号 | AC-05 | 未执行 |
-| V06 | 相机 K/T_BC/畸变、IMU T_BS/杆臂真实影响输出；启噪统计满足 99% 置信检验，固定种子重放 | AC-06 | 未执行 |
+| V06-D | **确定性检查**：不同相机 K/T_BC/畸变、IMU T_BS/杆臂确实改变观测；禁噪理想值正确、启噪可区分、固定种子相同序列逐元素重放一致 | AC-06 | 未执行 |
+| V06-S | **统计检查**：使用 LLD §6.2 冻结的 Δt=5ms、种子 0..7、各流 4096 样本、每组 n=98304/ν=98303，对 gyro/accel white 与 gyro/accel walk 四组分别要求双侧 99% 卡方范围 [97164.6270, 99448.8862] | AC-06 | 未执行 |
 | V07 | 任意 N 相机门控、逐传感器重复/回退拒绝；整批失败时序号不变 | AC-07 | 未执行 |
 | V08 | 未生成图像的任意有效时刻，Room 六个有限面真实最近交点及视域失败状态 | AC-08 | 未执行 |
 | V09 | 事件改变可重算历史，源代码审查与内存量测证明不保留按帧/位姿/IMU/交点结果 | AC-09 | 未执行 |
@@ -113,7 +114,7 @@
 | P0 | 设计文档和两仓库实际代码可读取 | HEAD 差异、工具链、实际依赖版本与坐标约定记录完成 |
 | P1 | P0 | V01 Linux 共享库构建、安装及独立消费者通过 |
 | P2 | P1 | V02/V03/V04 运动解析和事件历史通过 |
-| P3 | P2 | V05/V06 多相机、IMU 标定与噪声正确性通过 |
+| P3 | P2 | V05/V06-D/V06-S 多相机、IMU 标定与噪声正确性通过 |
 | P4 | P3 | V08 Room 场景和任意时刻射线交点通过 |
 | P5 | P4 | V07/V09/V11 门控、无缓存与原子性通过 |
 | P6 | P5 | V01–V11、V13 的功能与安装检查通过，**不等待延期的 V12 性能验收** |
@@ -151,7 +152,7 @@
 | FR-M03 | AC-02、AC-04 | §3.3 事件顺序、§4 Evaluate | V02、V04 | P2 |
 | FR-M04 | AC-04 | §2 MotionState、§4 解析式 | V04 | P2 |
 | FR-S01 | AC-05 | §2 CreateCamera/RenameCamera、§5 | V05 | P3 |
-| FR-S02 | AC-06 | §5 投影、§6 IMU 与噪声 | V06 | P3 |
+| FR-S02 | AC-06 | §5 投影、§6 IMU 与噪声 | V06-D、V06-S | P3 |
 | FR-S03 | AC-07 | §2 Generate、§8 | V07、V11 | P5 |
 | FR-G01 | AC-08 | §7 Room 几何 | V08 | P4 |
 | FR-G02 | AC-08 | §2 Raycast、§7 | V08 | P4 |
@@ -163,9 +164,9 @@
 | NFR-04 | AC-07 | §2.1 错误、§8 原子性 | V07、V11 | P5 |
 | NFR-05 | AC-01、AC-10 | §2.1 状态码、§9 输出 | V01、V10、V11 | P1、P6 |
 | NFR-06 | AC-01 | §2.3 ABI、§9.2 安装 | V01 | P1、P6 |
-| NFR-07 | AC-02、AC-04、AC-06、AC-08 | §4 解析、§5/§6 观测、§7 交点 | V02、V04、V06、V08 | P2–P6 |
+| NFR-07 | AC-02、AC-04、AC-06、AC-08 | §4 解析、§5/§6 观测、§7 交点 | V02、V04、V06-D、V06-S、V08 | P2–P6 |
 
-检查要求：每个 FR/NFR 至少有 AC、LLD 和 V/P 入口；每个 AC-01..AC-12 都有 V；所有 V01..V13 对应至少一个 AC。若增加需求或测试必须同步更新此表和 SRS §10。
+检查要求：每个 FR/NFR 至少有 AC、LLD 和 V/P 入口；每个 AC-01..AC-12 都有 V；V01–V13 的序列中 V06 由 V06-D 与 V06-S 两条实测用例共同覆盖。若增加需求或测试必须同步更新此表和 SRS §10。
 
 ## 9. 可执行验收命令与检查单（**后续实施才执行**）
 
@@ -181,7 +182,8 @@ c++ --version
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX="$PWD/../visualsim-install" -DBUILD_TESTING=ON
 cmake --build build -j
-ctest --test-dir build --output-on-failure
+ctest --test-dir build -N # 首先列出真正注册的测试名/数量（验收记录）
+ctest --test-dir build --output-on-failure # 再执行实际注册的 V01–V11/V13 功能测试
 cmake --install build
 
 # 验证安装在源码树外可消费（路径应在 P1 实现后存在）
@@ -191,7 +193,28 @@ cmake --build build-consumer -j
 
 # 二进制依赖检查：以下命令中的库路径必须由实际安装产物确定
 find ../visualsim-install -type f -name '*.so*' -print
-# 在确定主库路径后，使用 ldd / readelf 检查 ROS 依赖与 SONAME。
+# 在确定主库路径后，扫描 ELF 的直接 NEEDED 和递归运行时依赖
+LIB="$(find ../visualsim-install -type f -name 'libvisualsim.so*' | head -n 1)"
+test -n "$LIB" && test -f "$LIB"
+ldd "$LIB" | tee build-visualsim-ldd.txt
+readelf -d "$LIB" | tee build-visualsim-readelf.txt
+if grep -Eiq 'rclcpp|rosidl|ament|cv_bridge|sensor_msgs|geometry_msgs|nav_msgs|libros' \
+    build-visualsim-ldd.txt build-visualsim-readelf.txt; then
+  echo "Forbidden ROS dependency detected" >&2
+  exit 1
+fi
+# 若消费者本身也链接了其他库，对消费者可执行文件再运行同样的 ldd/readelf 核对
+~~~
+
+Windows 的**配置负例**须在 Windows 主机上执行（仅验证拒绝，**绝不编译 Windows 程序**）：
+
+~~~powershell
+# 预期：CMake 在配置阶段返回非零，并提示 VisualSim supports Linux only
+cmake -S . -B out/windows-rejected -DCMAKE_BUILD_TYPE=Release
+if ($LASTEXITCODE -eq 0) { throw "FAILED: Windows configuration was accepted" }
+~~~
+
+Linux 构建日志应包含 ctest -N 的测试清单；根据实际注册的测试名称核查 V01–V11 和 V13 的覆盖情况，不能编造未实现的 CTest 名称或将“已注册”视为“已通过”。
 ~~~
 
 **操作检查单**：核查链接目标/运行库不含 ROS/ament，Windows 仅失败配置，依赖版本已登记；当前阶段应执行 V02–V11、V13 等功能用例，**不执行已延期的 V12 性能验收**；采样失败无部分状态提交；多次 Raycast 不产生结果缓存；数据导出需显式目标路径且不会递归删除用户目录；来源仓库未被写入。若命令失败，记录退出码与日志，回退至上一通过阶段。

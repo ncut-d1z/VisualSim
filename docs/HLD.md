@@ -1,6 +1,6 @@
 # VisualSim 运行时库概要设计（HLD）
 
-> 状态：设计提案，尚未实施。功能验收以 [SRS.md](SRS.md) 为准，逐接口及公式见 [LLD.md](LLD.md)；**源文件迁移及实施清单移至 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)**。本文件不包含迁移方向表。
+> 状态：**v1 设计基线（本轮文档审计后冻结，待代码实施与功能验证）**。功能验收以 [SRS.md](SRS.md) 为准，逐接口及公式见 [LLD.md](LLD.md)；**源文件迁移及实施清单移至 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)**。本文件不包含迁移方向表。
 >
 > 目标：Ubuntu 24.04 / Linux 独立可安装共享库；无 ROS；Windows 配置失败；不为迁就发行版默认工具链而强制降级。
 
@@ -68,6 +68,62 @@ CLI/Exporter 可在显式调用时将输出写为 PNG/CSV/YAML；不得把 CLI �
 
 模块之间共享定义明确的**时刻快照（单次调用临时值）**：解析运动状态、该时刻相机/IMU 参数、Room 参数和请求时间。时间线只保留用户输入的配置修改事件；瞬时快照不被跨调用持久化。错误返回策略、快照字段和全部时序边界下沉到 LLD。
 
+### 3.1 运行时交互视图：事件提交与按需生成
+
+~~~mermaid
+sequenceDiagram
+    participant Caller as C++ / Config Caller
+    participant API as Simulator API
+    participant Timeline as EventTimeline
+    participant Eval as HistoricalEvaluator
+    participant Seq as FrameSequencer
+    participant Cam as CameraRenderer
+    participant IMU as ImuModel
+    Caller->>API: Begin/Set/End(effective_ns, params)
+    API->>Timeline: 校验事件/追加有效变更
+    Timeline-->>API: 事件提交状态
+    API-->>Caller: Result
+    Caller->>API: Generate(at_ns, camera/imu gate)
+    API->>Seq: 校验被启用传感器的时间与编号
+    API->>Eval: 读取时刻 at_ns 的真值/标定
+    Eval->>Timeline: 按时间回放用户配置历史
+    Timeline-->>Eval: 有效事件
+    Eval-->>API: 临时运动/传感器状态
+    opt camera gate
+        API->>Cam: 渲染当时存在的全部相机
+        Cam-->>API: 临时图像帧
+    end
+    opt imu gate
+        API->>IMU: 生成该时刻的测量
+        IMU-->>API: 临时 IMU 帧
+    end
+    API->>Seq: 全部成功后原子提交最小编号/时间状态
+    API-->>Caller: SampleBatch / Status
+~~~
+
+此图说明**按需重放 + 批量事务提交**，不意味着每条事件会重新采样，也不引入历史帧缓存。错误时不执行最终提交。
+
+### 3.2 运行时交互视图：任意时间的只读 Raycast
+
+~~~mermaid
+sequenceDiagram
+    participant Caller
+    participant API as Simulator API
+    participant Eval as HistoricalEvaluator
+    participant Timeline as EventTimeline
+    participant Room as Room Geometry
+    Caller->>API: Raycast(time_ns, camera, bearings)
+    API->>Eval: 获取指定时间的姿态和相机标定
+    Eval->>Timeline: 回放 <= time_ns 的事件
+    Timeline-->>Eval: 有效模式和参数历史
+    Eval-->>API: 临时世界位姿/相机配置
+    API->>Room: 查询每条射线的最近正向可见交点
+    Room-->>API: 交点或逐项失败状态
+    API-->>Caller: RayHit 向量
+~~~
+
+Raycast **不调用 Generate**，不要求图像已生成，不变更采样状态。两类流程的时序及错误优先级以 LLD §§2、7、8 为准。
+
 ## 4. 运动组合与作用域语义
 
 ### 4.1 每类恰有一个有效模式
@@ -126,6 +182,21 @@ CLI/Exporter 可在显式调用时将输出写为 PNG/CSV/YAML；不得把 CLI �
 
 公开头文件与共享库不引用 ROS 类型或链接目标。Linux .so 通过 CMAKE_INSTALL_PREFIX 安装，并提供可重定位 CMake 配置与独立消费端示例。用户现有高版本编译工具链可以保留；CMake 在非 Linux（特别是 Windows）时明确拒绝。不得附带声称可工作的 Windows build preset/PowerShell 入口。
 
+### 9.2 部署视图：安装树和外部消费者
+
+~~~mermaid
+flowchart LR
+    Consumer["独立 C++ 消费端"] --> Package["VisualSimConfig.cmake / VisualSimTargets.cmake"]
+    Package --> Shared["libvisualsim.so (SONAME 1)"]
+    Consumer --> Headers["安装后的公开头文件"]
+    Shared --> Eigen["Eigen3"]
+    Shared --> OpenCV["OpenCV"]
+    Shared -. "按实际功能可选" .-> Sophus["Sophus / yaml-cpp"]
+    CLI["可选 CLI / DatasetExporter"] --> Shared
+~~~
+
+所有实体均来自**目标仓库的 Linux 安装产物或非 ROS 依赖**。消费者在安装前缀外使用 find_package 和 VisualSim::VisualSim，运行时由 Linux 动态装载器解析 .so；部署不依赖 ROS 工作空间。图中的 Sophus / yaml-cpp 表示按实际使用选择，不意味着必须引入未使用的链接依赖；构建标准和实际库版本在首次实际构建时记录，禁止强制降低用户已有工具链版本。
+
 可选 CLI/Exporter 从配置文件中读时间戳运动和标定事件，再使用同一库 API 采样/写盘；原有前向匀速/纯旋转作为配置示例保留**运动能力**，但两种运动均在 Room 场景上运行。不得在 main.cpp 中重新写死运动轨迹，也不得无提示递归删除输出目录。
 
 ## 10. 非功能设计与质量属性
@@ -133,7 +204,7 @@ CLI/Exporter 可在显式调用时将输出写为 PNG/CSV/YAML；不得把 CLI �
 | NFR | 架构性选择 | 验证入口 |
 | --- | --- | --- |
 | NFR-01 持久内存 | 仅事件时间线 + 当前设置 + 必需协议控制量；按需重算，不保留历史结果 | 状态对象审查、重复请求前后驻留量对比 |
-| NFR-02 查询性能 | 朴素事件重放工作量为 O(E)，查询还随相机数/Room 几何变化；首次有效运行后再决定性能指标 | **正式性能验收延期，非当前功能交付门槛** |
+| NFR-02 查询性能 | 仅保留测量延迟、驻留内存和事件重放工作量的能力，当前**未实施正式性能验收**；首次生成有效数据后再考虑预算 | **延期项目；目前不通过也不阻断功能交付** |
 | NFR-03 并发隔离 | 单实例采用外部串行化合同；不同实例无可变共享模拟状态 | 多实例交叉生成、同实例互斥验证 |
 | NFR-04 失败回滚 | 配置事件与生成结果先验证后提交，不允许部分成功 | 错误注入 + 状态不变检查 |
 | NFR-05 可观测性 | 返回稳定程序化状态码和可诊断消息，日志可选且无隐式写盘 | 错误码覆盖和无文件副作用检查 |
@@ -147,7 +218,7 @@ CLI/Exporter 可在显式调用时将输出写为 PNG/CSV/YAML；不得把 CLI �
 | 风险 | 采用的设计及理由 | 代价、缓解或待决事项 |
 | --- | --- | --- |
 | 无结果缓存造成反复查询成本高 | 坚持用户禁止历史结果缓存的约束，直接基于事件重算 | 首次有效运行后再决定是否做基准；可优化解析公式/事件遍历，不准悄加缓存；当前性能验收延期 |
-| 浮点秒与整数纳秒一致性 | 事件索引和输出使用 std::int64_t，解析公式使用明确转换的秒 | 同构工具链可复现，跨架构逐位一致不承诺；LLD 明确数值容差 |
+| 浮点秒与整数纳秒一致性 | 事件索引和输出使用 std::int64_t，解析公式使用明确转换的秒 | 同构工具链可复现，跨架构逐位一致不承诺；**LLD §2.4 已冻结 SO(3)/法向/四元数容差，§7 已冻结 Room 求交容差**；验证入口为 PLAN V04/V08 |
 | 公共接口依赖 Eigen/OpenCV | 首期 C++ 原生接口直接满足用户调用需求 | 二进制兼容限定构建/运行环境；SONAME 与 ABI 改动受控 |
 | “过去查询”与历史冻结冲突 | 查询允许随机读取；配置的回溯修改必须保护已输出数据一致性 | 会话重置与历史替换是不同操作，错误明确；精确边界见 LLD |
 | YAML 配置长期演进 | 版本化 schema，与函数调用转换为同一事件流 | 未知字段/版本显式报错，扩展采用受控版本升级 |
