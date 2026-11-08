@@ -1,6 +1,6 @@
 # VisualSim 文档审计进度（AUDIT_PROGRESS）
 
-> 当前轮次：**Round 3 已先行登记，源码文件核验/计划修订进行中**。此前 Round 1（13 项）与 Round 2（6 项）共 19/19 已闭环；生产代码、编译和功能验收尚未进行。
+> 当前轮次：**Round 3 已完成：目标及来源 38/38 个相关头/源文件已逐项核验，A20–A25 共 6/6 项已整改**。Round 1（13 项）与 Round 2（6 项）历史保留，累计 A01–A25 **25/25 闭环**；生产代码、编译和功能验收尚未执行。
 >
 > 审计依据：[AUDIT.md](AUDIT.md)；文档对象：SRS.md、HLD.md、LLD.md、IMPLEMENTATION_PLAN.md；仅允许修改 ncut-d1z/VisualSim 的 docs 文档。来源 ncut-d1z/ros2-vio-node 禁止写入。
 >
@@ -139,25 +139,44 @@
 
 | 相对路径 | 审计状态 | 目标 |
 | --- | --- | --- |
-| docs/IMPLEMENTATION_PLAN.md | 正在审计 | 分支基线、全文件清单、差异、迁移取舍、工具链 |
-| docs/HLD.md | 空白 | 工具链及源码依赖边界不与架构冲突 |
-| docs/LLD.md | 空白 | 工具链版本、算法边界不与源码迁移方案冲突 |
+| docs/IMPLEMENTATION_PLAN.md | 已审计 | 分支基线、全文件清单、差异、迁移取舍、工具链 |
+| docs/HLD.md | 已审计 | 工具链及源码依赖边界不与架构冲突 |
+| docs/LLD.md | 已审计 | 工具链版本、算法边界不与源码迁移方案冲突 |
 | docs/AUDIT.md | 已审计 | 本轮审计规则先行登记 |
-| docs/AUDIT_PROGRESS.md | 正在审计 | 问题先登记、过程及整改状态更新 |
+| docs/AUDIT_PROGRESS.md | 已审计 | 问题先登记、过程及整改状态更新 |
 
 ### 7.2 先登记的整改目标
 
 | ID | 文件相对路径 | 具体整改目标 | 整改状态 | 当前依据 |
 | --- | --- | --- | --- | --- |
-| A20 | docs/IMPLEMENTATION_PLAN.md | 采用 `ftr-eskf` 固定来源 SHA，不沿用来源 main | 未整改 | 现 PLAN §1 指向来源 main |
-| A21 | docs/IMPLEMENTATION_PLAN.md | 逐文件列出双方 VisualSim 本体、直接仓内依赖和 CameraIO 的头/源文件，说明未来是否写入目标仓库 | 未整改 | 现 PLAN §3 仅选列部分来源文件 |
-| A22 | docs/IMPLEMENTATION_PLAN.md | 对同名 Room.hpp 和功能对应的轨迹/入口/CMake 逐项比较、决定合并方式 | 未整改 | 两仓库 Room.hpp SHA 不同 |
-| A23 | docs/IMPLEMENTATION_PLAN.md | 新增 ImuNoiseModel、StressModel/Tests、CameraIO/FFV1 的迁移决定及约束 | 未整改 | ftr-eskf 的新模块不在旧 PLAN §3 |
-| A24 | docs/IMPLEMENTATION_PLAN.md；docs/HLD.md；docs/LLD.md | 记录用户提供的 CMake 4.3.4、GCC 16.2.0、Ubuntu 24.04 运行环境，不误记为本轮实测 | 未整改 | 用户提供版本输出 |
-| A25 | docs/IMPLEMENTATION_PLAN.md；docs/AUDIT_PROGRESS.md | 完整复核文件清单及与 v1 合同一致性；更新进度并明确 P0 代码未开始 | 未整改 | 待完整审查 |
+| A20 | docs/IMPLEMENTATION_PLAN.md | 采用 `ftr-eskf` 固定来源 SHA，不沿用来源 main | 已整改 | PLAN §1 与 §3 已切换为来源 ftr-eskf@fd1e0817；整改提交 26e42049102b |
+| A21 | docs/IMPLEMENTATION_PLAN.md | 逐文件列出双方 VisualSim 本体、直接仓内依赖和 CameraIO 的头/源文件，说明未来是否写入目标仓库 | 已整改 | PLAN §3.1–3.3 38 行清单（目标4、来源本体15、关联19），固定 Git tree 全部路径存在；26e42049102b |
+| A22 | docs/IMPLEMENTATION_PLAN.md | 对同名 Room.hpp 和功能对应的轨迹/入口/CMake 逐项比较、决定合并方式 | 已整改 | PLAN §3.4 直接比较 Room.hpp blob b6dfb2fc vs e7f63817；另对照 Path/Trajectory、CLI 与 CMake；26e42049102b |
+| A23 | docs/IMPLEMENTATION_PLAN.md | 新增 ImuNoiseModel、StressModel/Tests、CameraIO/FFV1 的迁移决定及约束 | 已整改 | PLAN §3.2/3.3/3.5/3.7 说明 ImuNoiseModel、Stress、CameraIO/FFV1 的取舍及 v1 限制；26e42049102b |
+| A24 | docs/IMPLEMENTATION_PLAN.md；docs/HLD.md；docs/LLD.md | 记录用户提供的 CMake 4.3.4、GCC 16.2.0、Ubuntu 24.04 运行环境，不误记为本轮实测 | 已整改 | PLAN §7.2、HLD §9.1、LLD §9.2 记录用户提供 CMake 4.3.4、GCC 16.2.0；未实机运行；26e42049102b |
+| A25 | docs/IMPLEMENTATION_PLAN.md；docs/AUDIT_PROGRESS.md | 完整复核文件清单及与 v1 合同一致性；更新进度并明确 P0 代码未开始 | 已整改 | PLAN §3.7 差距矩阵完成，38/38 路径核验；SRS v1 不变、P0 代码未开始，本节状态闭环 |
 
 ### 7.3 先行快照
 
 - 本轮拟核查范围：目标 `src/`/测试文件；来源 `src/VisualSim/`、与其编译/头引用相关的 `CameraIO` 和 `include/euroc_vio/` 依赖。
 - 旧 19 项审计记录保持已整改；本轮 A20–A25 先全部标记未整改，待文件静态核查。
 - 禁止修改只读来源及生产代码；**不执行编译/CTest/仿真**，也不称 P0 代码差异审查已经完整执行。
+
+
+### 7.4 Round 3 实际审计与整改结论
+
+| 阶段/范围 | 结果 | 证据 |
+| --- | --- | --- |
+| 审计规范与初始整改项登记 | 已完成，先于文档修改 | `898dd10ceb90abb6fe0ca55a9a770885c3c8a299` |
+| 目标仓库源码清点 | 4/4 | src/Room.hpp、src/Trajectory.hpp、src/main.cpp、tests/TrajectoryTests.cpp |
+| 来源 src/VisualSim 本体 | 15/15 | ftr-eskf 固定 tree 下全部头/源文件 |
+| 来源 CameraIO/引用依赖 | 19/19 | 包括 src/CameraIO/、include/euroc_vio/ 和一个 VisualSlam 测试间接依赖 |
+| 逐文件去留与同名冲突决策 | 已完成 | PLAN §3.1–§3.7；同名 Room.hpp 和职责对应文件具体差异 |
+| 工具链事实录入 | 已完成 | PLAN/HLD/LLD 三处均注明用户提供 CMake 4.3.4、GCC 16.2.0，非本轮实测 |
+| 三份设计/计划文档修订 | 已完成 | `26e42049102beb62da22bafccfad4c0ed1a2618a` |
+| 来源仓库保护 | 保持只读 | 来源 ftr-eskf SHA 仍为 `fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03` |
+| P0–P6 生产代码、编译/CTest | 未执行 | 文档审计不等于实际库验收 |
+
+**Round 3 最终统计**：审计对象 PLAN、HLD、LLD 与两份审计文件共 5 份，**已审计 5/5**；A20–A25 **已整改 6/6**，无需整改 0、未整改 0。**累计 A01–A25 已整改 25/25**，旧轮次 19 项及登记时的未整改快照仍保留以供追溯。
+
+**当前结论**：实施计划已与 **指定 ftr-eskf 固定源码版本**在迁移候选范围、同名差异及纳入/排除决策上静态对齐；但冻结的 v1 大部分运行时能力并不存在于当前目标代码，必须由后续 P0–P6 另行实现与测试。启动 P0 时需要再次获取最新 HEAD 以处理这一固定快照之后的增量。
