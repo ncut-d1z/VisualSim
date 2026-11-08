@@ -1,6 +1,6 @@
 # VisualSim 文档审计进度（AUDIT_PROGRESS）
 
-> 当前轮次：**Round 2 已完成：4/4 份文档已审计，A14–A19 共 6/6 项已整改并静态复核**。Round 1 历史：13/13 项已整改。累计 19/19 项有闭环结论；生产代码、编译和功能验收尚未进行。
+> 当前轮次：**Round 3 已先行登记，源码文件核验/计划修订进行中**。此前 Round 1（13 项）与 Round 2（6 项）共 19/19 已闭环；生产代码、编译和功能验收尚未进行。
 >
 > 审计依据：[AUDIT.md](AUDIT.md)；文档对象：SRS.md、HLD.md、LLD.md、IMPLEMENTATION_PLAN.md；仅允许修改 ncut-d1z/VisualSim 的 docs 文档。来源 ncut-d1z/ros2-vio-node 禁止写入。
 >
@@ -129,3 +129,35 @@
 - **累计 A01–A19：19/19 已整改并有静态核查结论**；未整改 0。Round 1 的 13 条原始记录及初始状态快照保留，用于追溯“先登记后整改”的顺序。
 - **设计状态**：v1 设计基线冻结，按文档检查已具备启动 **P0 源码差异审查**条件。
 - **工程状态**：P0–P6 尚未实施；不声称 C++ 编译、CTest、数值统计验证或性能验收已经通过。AC-11/V12 性能仍延期。
+
+
+## 7. Round 3：源码与实施计划一致性审计（2026-11-08）
+
+> 审计基线：目标 `VisualSim/main@d4b38f2ea73fa5aef700b303517a45ec21281561`；来源**只读** `ros2-vio-node/ftr-eskf@fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03`。本节先登记后修改，不改动旧 19 项历史。
+
+### 7.1 先行登记的审计状态
+
+| 相对路径 | 审计状态 | 目标 |
+| --- | --- | --- |
+| docs/IMPLEMENTATION_PLAN.md | 正在审计 | 分支基线、全文件清单、差异、迁移取舍、工具链 |
+| docs/HLD.md | 空白 | 工具链及源码依赖边界不与架构冲突 |
+| docs/LLD.md | 空白 | 工具链版本、算法边界不与源码迁移方案冲突 |
+| docs/AUDIT.md | 已审计 | 本轮审计规则先行登记 |
+| docs/AUDIT_PROGRESS.md | 正在审计 | 问题先登记、过程及整改状态更新 |
+
+### 7.2 先登记的整改目标
+
+| ID | 文件相对路径 | 具体整改目标 | 整改状态 | 当前依据 |
+| --- | --- | --- | --- | --- |
+| A20 | docs/IMPLEMENTATION_PLAN.md | 采用 `ftr-eskf` 固定来源 SHA，不沿用来源 main | 未整改 | 现 PLAN §1 指向来源 main |
+| A21 | docs/IMPLEMENTATION_PLAN.md | 逐文件列出双方 VisualSim 本体、直接仓内依赖和 CameraIO 的头/源文件，说明未来是否写入目标仓库 | 未整改 | 现 PLAN §3 仅选列部分来源文件 |
+| A22 | docs/IMPLEMENTATION_PLAN.md | 对同名 Room.hpp 和功能对应的轨迹/入口/CMake 逐项比较、决定合并方式 | 未整改 | 两仓库 Room.hpp SHA 不同 |
+| A23 | docs/IMPLEMENTATION_PLAN.md | 新增 ImuNoiseModel、StressModel/Tests、CameraIO/FFV1 的迁移决定及约束 | 未整改 | ftr-eskf 的新模块不在旧 PLAN §3 |
+| A24 | docs/IMPLEMENTATION_PLAN.md；docs/HLD.md；docs/LLD.md | 记录用户提供的 CMake 4.3.4、GCC 16.2.0、Ubuntu 24.04 运行环境，不误记为本轮实测 | 未整改 | 用户提供版本输出 |
+| A25 | docs/IMPLEMENTATION_PLAN.md；docs/AUDIT_PROGRESS.md | 完整复核文件清单及与 v1 合同一致性；更新进度并明确 P0 代码未开始 | 未整改 | 待完整审查 |
+
+### 7.3 先行快照
+
+- 本轮拟核查范围：目标 `src/`/测试文件；来源 `src/VisualSim/`、与其编译/头引用相关的 `CameraIO` 和 `include/euroc_vio/` 依赖。
+- 旧 19 项审计记录保持已整改；本轮 A20–A25 先全部标记未整改，待文件静态核查。
+- 禁止修改只读来源及生产代码；**不执行编译/CTest/仿真**，也不称 P0 代码差异审查已经完整执行。

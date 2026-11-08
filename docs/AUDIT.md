@@ -140,3 +140,32 @@
 - **跨文档一致性**：§8.3 九组约束均核查通过（部分由高层文档引用 LLD/PLAN 详细合同实现，不要求词语逐字重复）。特别是 SRS §10 与 PLAN §8 共 **18 个 FR/NFR → AC** 关系的集合逐项比较，**18/18 一致、0 差异**；四份设计文档的 `~~~` 代码块分隔符均成对。
 - **状态**：本轮四份文档 **已审计 4/4**；A14–A19 **已整改 6/6**，无需整改 0，未整改 0；上一轮 A01–A13 的已整改历史保留，累计登记整改目标 **19/19 闭环**。本次是文档静态审计，不是编译/功能/性能验收，P0～P6 仍需实际执行。
 - **结论**：可以维持“**v1 设计基线冻结，具备启动 P0 差异审查的文档条件**”。后续如实际源码检查揭示设计缺口，需先按本规范追加审计记录，禁止未经授权擅自重设计。
+
+
+## 10. Round 3：源码清单与实施计划一致性审计规范（2026-11-08）
+
+### 10.1 基线及禁止边界
+
+本轮以目标仓库 `ncut-d1z/VisualSim` 的 **main@d4b38f2ea73fa5aef700b303517a45ec21281561** 和只读来源仓库 `ncut-d1z/ros2-vio-node` 的 **ftr-eskf@fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03** 为比较基线。**不得使用旧来源 main 分支冒充 ftr-eskf**。本轮只修改目标仓库 `docs/`，不得对任一仓库实施生产代码迁移、运行 CMake/CTest 或写来源仓库。
+
+### 10.2 核验方法与表格要求
+
+1. 从两份固定提交的 Git tree 递归列举代码文件，至少包含目标 `src/`、`tests/` 及来源 `src/VisualSim/` 的全部头文件/源文件；另外追踪来源 VisualSim 直接引用的仓库内头文件、`camera_frame_io` 依赖源文件与相关测试文件。区分“VisualSim 本体”与“关联模块/仅因被排除的 VIO 工具引用”。
+2. 在 `IMPLEMENTATION_PLAN.md` 中用**逐文件表**列出双方所有在范围内的头文件与源文件，每行含仓库、相对路径、现有用途、未来是否写入目标仓库（保留/改写纳入/不纳入）、目标位置或替代方案、原因；禁止只列举示例文件。
+3. 同名 `Room.hpp` 必须**实际比较两个版本**，不能因为功能类似而称为同一实现；同时比较功能对应的 `Trajectory.hpp`↔`Path.hpp`、`main.cpp`↔`VisualSim.cpp` 及两个项目的 CMake 目标。标清源代码的 T_SB/T_BC 方向、固定双目 vs 任意相机数、IMU 随机过程、图像通道与 FFV1 约束。
+4. 列出来源 `ImuNoiseModel.*`、`StressModel.hpp`/`StressTests.cpp`、`CameraIO`/FFmpeg 关联代码，明确是否纳入以及与 v1 冻结合同的相容性。不得将来源旧的连续采样偏置缓存模式替换 LLD §6.2 的 Brownian bridge，无许可不得引入 FFV1 视频或 Windows/ROS。
+5. 实施计划及合适的设计文档须记录**用户提供（非本轮实测）**的 Ubuntu 24.04 工具链：`cmake 4.3.4`、`GCC g++/c++ 16.2.0`。不得以 Ubuntu 默认包版本为由降低现有工具链。
+6. 新发现的清单缺项/分支引用错误须先在 AUDIT_PROGRESS.md 登记，再更改 PLAN/HLD/LLD；复核表格路径在固定 Git tree 中存在、同名差异结论与 v1 SRS/HLD/LLD 不矛盾、来源未写入。仅文档检查通过，不得称代码 P0 已实际执行或所有实现已完成。
+
+### 10.3 Round 3 任务登记
+
+| ID | 目标文件相对路径 | 审计/整改目标 |
+| --- | --- | --- |
+| A20 | docs/IMPLEMENTATION_PLAN.md | 将旧来源 main 改为用户指定的 `ftr-eskf` 并固定双方 HEAD/比较基线 |
+| A21 | docs/IMPLEMENTATION_PLAN.md | 列出目标与来源所有范围内的头/源文件，以及每个文件未来是否迁入/保留/重写/排除 |
+| A22 | docs/IMPLEMENTATION_PLAN.md | 同名 `Room.hpp` 逐项比较；同时分析两边轨迹/CLI 的不同命名但相同职责代码，给出冲突解决方案 |
+| A23 | docs/IMPLEMENTATION_PLAN.md | 补来源分支新增 IMU 噪声、压力/扰动、CameraIO/FFV1 依赖与否的取舍，核查 ROS/Windows/灰度/无缓存边界 |
+| A24 | docs/IMPLEMENTATION_PLAN.md；docs/HLD.md；docs/LLD.md | 记录用户的 CMake 4.3.4、GCC 16.2.0 已知工具链，说明来源与验收时仍需核实 |
+| A25 | docs/AUDIT_PROGRESS.md；docs/IMPLEMENTATION_PLAN.md | 固定源码文件清单、迁移策略、实际审阅证据和 P0 尚未实施的边界；更新审计进度 |
+
+**先登记后调整：**本节与 AUDIT_PROGRESS 的 Round 3 初始问题表应先行提交，再实施本轮文档修订与静态复核。
