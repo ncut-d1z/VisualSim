@@ -223,7 +223,7 @@ private:
 | 圆周法向与相位零方向 | \(|n_W^\mathsf{T}e_W|\le10^{-9}\) | InvalidMode |
 | 配置文件四元数 (w,x,y,z) | 有限且 \(|\|q\|-1|\le10^{-10}\)；合格后确定性归一化一次 | InvalidConfigSchema |
 | 相机内参 K | fx>0、fy>0、宽高正且有限；第三行偏差 \(|K_{20}|,|K_{21}|,|K_{22}-1|\le10^{-12}\) | InvalidCalibration |
-| 圆周初始/固定圆心位置相容 | \(\|p_\text{anchor}-(c+r_0)\|\le\max(10^{-9}\ {\rm m},10^{-10}r)\) | InvalidMode |
+| 圆周初始/固定圆心位置相容 | \(\|p_\text{anchor}-(c+r_0)\|\le\max(10^{-9}\ {\rm m},10^{-10}r)\)；其中 \(r_0\) 为段首有向半径向量，定义见 §4.2 | InvalidMode |
 | Room 解析射线 | 方向平行阈值 \(10^{-12}\)（无量纲）；最小正向距离 \(\max(10^{-9}\ {\rm m},10^{-12}D)\)；有限面边界容差 \(10^{-12}D\)，D 为房间对角线（米） | §7 的 RayHit.failure |
 
 单位视线另依 §7 的 \(|\|u_C\|-1|\le10^{-9}\) 判定。所有越界单位向量均拒绝，不得悄悄归一化；合格后可以作一次确定性归一化以减小数值误差。Room 尺寸、焦距/采样率须为有限正数；噪声强度须为有限非负数。
@@ -375,6 +375,8 @@ $$
 
 ### 5.1 注册、默认相机与重命名规则
 
+**自动命名索引的初始值与提交规则（v1 固定）**：新实例的 next_auto_camera_index 初始为 **0**；虚拟默认 cam0 预留自动名称 cam0 和 SensorId=0，但未显式创建前不产生配置事件。若首次有效 CreateCamera 在 t=0 代替尚未使用/修改的虚拟默认 cam0，则提交 cam0、SensorId=0，**next_auto_camera_index 更新为 1**。若首条 CreateCamera 发生于 t>0，或默认 cam0 此前已发生显式标定/改名修改或输出帧，则保留 cam0（视作已经占用自动后缀 0），先将候选索引推进到 **1**，为新相机分配第一个未被占用、未曾自动分配的后缀，并将 next_auto_camera_index 更新为 **本次实际分配后缀+1**；若因历史或 RenameCamera 占用 cam1 等名称，则继续单调跳号。只读查询虚拟 cam0 不消耗新编号；RenameCamera 不回退/回收索引；分配失败不提交索引或 SensorId 变化。
+
 CameraRegistry 的 SensorId 稳定且不会重用，名称按时刻解析。自动名称优先使用 cam0、cam1、cam2……，**若后续后缀已被合法重命名占用则跳过并继续递增**；更名不回收已发行自动序号，也不更改此前帧的 ID/编号。
 
 **默认与显式创建的定稿规则（避免查询引起隐式状态突变）：**
@@ -449,7 +451,7 @@ $$
 
 **固定时间根域与整数边界（v1 冻结）**：以最近一次噪声设置事件 t_epoch 为相对时间原点，先验证 0≤t_epoch≤t≤INT64_MAX，再计算有符号非负差 t−t_epoch，并转换为 std::uint64_t 的 relative_ns，故 0≤relative_ns≤INT64_MAX。抽象二叉 dyadic Brownian-bridge 树的根采用**左闭右开**区间 [0,2^63) ns，长度采用 uint64_t(1)<<63 表示；右端点 2^63 **不是** std::int64_t 可表示的 TimestampNs，因此实现绝不把该右端点转换为 TimestampNs，也不计算可能溢出的有符号 t_epoch+2^63。节点起点、相对偏移、树层级和节点索引使用无符号整数；整树共有 63 层二分至 1 ns 叶，查询 t_epoch 时 W(0)=0 精确成立，t=INT64_MAX 仍落在半开根区间内。任何时间差或无符号索引运算都须检测不合法范围，不能发生隐式有符号溢出。
 
-随机过程在该根域内按时间一致的确定性 Brownian bridge 生成：根区间长度 T_s=(2^63 ns)×10^-9 s，根增量为 sqrt(T_s)·Z(root)。对子区间长度 L_s、已知父区间增量 Δ，左半区增量为 Δ/2+sqrt(L_s/4)·Z(node)，右半区增量为 Δ−左半区增量；Z 由下述固定 SplitMix64 + Box–Muller 键规则（seed、epoch、轴、节点相对起点和层级）产生。沿根至 relative_ns 的 dyadic 分割累加已覆盖子区间增量，最多 63 层，得 W(relative_ns)；**不保存**中间节点、先前偏置或 IMU 样本。布朗增量的方差以秒为单位，任意固定纳秒节点的零均值协方差遵循 Cov(W(s),W(t))=min(s,t)（秒）。
+随机过程在该根域内按时间一致的确定性 Brownian bridge 生成：根区间长度 T_s=(2^63 ns)×10^-9 s，根增量为 sqrt(T_s)·Z(root)。设当前父区间长度为 L_s、已知该父区间的总增量 Δ；对其左、右两个半区间，左半区增量为 Δ/2+sqrt(L_s/4)·Z(node)，右半区增量为 Δ−左半区增量；Z 由下述固定 SplitMix64 + Box–Muller 键规则（seed、epoch、轴、节点相对起点和层级）产生。沿根至 relative_ns 的 dyadic 分割累加已覆盖子区间增量，最多 63 层，得 W(relative_ns)；**不保存**中间节点、先前偏置或 IMU 样本。布朗增量的方差以秒为单位，任意固定纳秒节点的零均值协方差遵循 Cov(W(s),W(t))=min(s,t)（秒）。
 
 v1 的伪随机位流固定使用 SplitMix64 置换：先对 64 位无符号键加 0x9E3779B97F4A7C15，依次令 x=(x xor (x>>30))*0xBF58476D1CE4E5B9、x=(x xor (x>>27))*0x94D049BB133111EB、x=x xor (x>>31)，全部按 64 位模 2^64 运算。键的混合顺序固定为：令 key=seed，依次对固定域标签（白噪声=1、布朗桥根=2、布朗桥内部结点=3）、配置事件 insertion_order、sensor_id、轴号(0..5)、采样时刻或结点起点的整数纳秒、结点层级、独立高斯分量编号，执行 key=SplitMix64(key xor SplitMix64(该字段的 uint64_t 位模式))。白噪声使用请求时刻；布朗桥使用结点起点和层级；不同域和轴具有不同键空间。分别以高斯分量编号 0、1 构造两个置换输出，高 53 位整数 m 映射为 u=(m+0.5)·2^(-53)，产生开区间 (0,1) 的 U1/U2，采用 Box–Muller Z=√(−2 ln U1) cos(2πU2)。这一定义固定了 v1 的随机过程家族与索引规则；受标准数学库浮点实现差异影响，**仅承诺同工具链/同构建的逐值可复现**，不承诺跨 libc/架构 bitwise 相同。
 
@@ -511,14 +513,17 @@ $$
 
 ## 8. 采样门控、时间严格递增与帧编号
 
+**首次生成与 Reset 的固定初始状态**：每个 SensorIdentity 的 last_successful_ns 使用 std::optional<TimestampNs>，**初始为 std::nullopt（尚未生成）**，next_frame_number 初始为 0；没有上一成功时间时**跳过重复/回退比较**，首次任意有效 at_ns（包括 0 ns）均可成功生成第 0 帧。新创建的相机同样从上述未生成状态开始；ResetSamplingSession 对已注册的所有传感器恢复 last_successful_ns=std::nullopt、next_frame_number=0，不删除运动/标定事件历史，也不把 0 ns 当成已生成时间。
+
 每次 Generate(at_ns, gate) 执行以下事务：
 
 ~~~text
 1. 若 camera=false 且 imu=false -> 空成功；无副作用
 2. 用事件历史求 at_ns 当时的相机集合、名称、标定、IMU 标定、Room
 3. 检查相机与 IMU 所有被启用传感器各自的 last_successful_ns
-   at_ns == last_successful_ns -> DuplicateTimestamp
-   at_ns <  last_successful_ns -> OutOfOrderTimestamp
+   若 last_successful_ns 为 std::nullopt，略过重复/回退比较
+   否则 at_ns == *last_successful_ns -> DuplicateTimestamp
+        at_ns <  *last_successful_ns -> OutOfOrderTimestamp
 4. 检查有效时间及参数，在函数局部临时生成所有图像、IMU 观测
 5. 全部成功后，一次性提交每传感器 last_successful_ns 与 next_frame_number
 6. 返回所有当时有效相机（按不可变 ID）及可选 imu0 的帧
@@ -633,7 +638,7 @@ reactivation_policy: ReanchorOnReactivation
 1. schema_version 必须是整数 1，其他版本报 InvalidConfigSchema；未知顶层键、未知 op、重复 YAML map key、非法数量、非有限数、非单位旋转/法向、同一时间的名称冲突均拒绝。
 2. timestamp_ns、sampling 中的 *_times_ns 必须是 YAML 十进制**整数**，在 std::int64_t 非负范围，禁止浮点数、科学计数法、溢出或字符串冒充纳秒。baseline 在 t=0 **始终先于 events**，按 room→pose→imu 固定顺序合成历史事件；events 时间须非递减，同刻以数组顺序确定其后续 insertion_order（§9.1 开头已冻结覆盖规则）。
 3. quaternion 顺序固定 **w,x,y,z**；位置/平移 [x,y,z]，K_row_major 是 3×3 按行展开的 9 个数，radtan 为 [k1,k2,p1,p2]。IMU 标定字段的 noise density 单位由 §6.2 固定。
-4. LoadMotionConfig(path) 仅允许用于**尚无显式业务事件且尚未输出帧**的新实例；整个文档先解析、验证、重建局部状态，成功才整体提交，任一错误则原对象完全不变。错误 message 包含可读 YAML 路径（如 events[3].value.axis_B），调用者以 Status 判断错误类别。
+4. LoadMotionConfig(path) **仅允许用于尚无显式业务事件且尚未成功输出任何传感器帧的新实例**。接口首先检查实例状态：若已有显式业务事件或成功输出过帧，**返回 Status::EventHistoryFrozen**（先于读取/解析文件），不部分加载、不修改现有配置或历史。状态允许时，再把整个文档解析、验证并重建到局部临时状态；只有全部成功才整体提交，任一 schema、文件或参数错误按既定状态码返回并保证原对象完全不变。错误 message 包含可读 YAML 路径（如 events[3].value.axis_B），调用者以 Status 判断错误类别。
 5. sampling 是**CLI 导出请求计划**，不是运动/标定修改事件；库的 LoadMotionConfig 只验证其结构并不隐式生成数据或写文件。新建模拟器若在未显式设置相机参数时直接按 sampling 生成图像，则输出默认尺寸 752×480、像素格式 CV_8UC1，必须使用 §5.1 的默认标定；不允许因为省略 K/width/height 而使用未初始化值。CLI 将两个 *_times_ns 合并、升序调度，每时刻为对应门控合并一次 Generate。不同传感器可同时间采样，单一传感器时间序列必须严格递增。
 6. 读取和写出的配置应保留事件顺序、标定数值及版本标记；库内事件历史 ChangeRecord 的 canonical_payload_yaml 可使用这里定义的 value 同构序列化，不得把计算出的图像或位姿追加进历史。
 

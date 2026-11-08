@@ -68,12 +68,12 @@ CLI/Exporter 可在显式调用时将输出写为 PNG/CSV/YAML；不得把 CLI �
 
 模块之间共享定义明确的**时刻快照（单次调用临时值）**：解析运动状态、该时刻相机/IMU 参数、Room 参数和请求时间。时间线只保留用户输入的配置修改事件；瞬时快照不被跨调用持久化。错误返回策略、快照字段和全部时序边界下沉到 LLD。
 
-**配置加载 → 事件历史 → 按时间查询（概要数据流）**：配置文件与直接函数调用进入同一时间戳事件历史。按时间查询与传感器生成共享解析求值，且不把结果写回历史。
+**配置加载 → 事件历史 → 按时间查询（概要数据流）**：配置文件与直接函数调用进入同一时间戳事件历史。**LoadMotionConfig 仅允许在尚无显式业务事件且未成功输出过帧的新实例上使用；已有实例的增量修改只能通过即时式事件 API 提交**（实例状态不满足时返回 EventHistoryFrozen，详见 LLD §9.1）。按时间查询与传感器生成共享解析求值，且不把结果写回历史。
 
 ~~~mermaid
 flowchart LR
-    A[配置文件] --> B[统一事件校验与提交]
-    C[即时式函数调用] --> B
+    A[仅新实例加载配置文件] --> B[统一事件校验与提交]
+    C[增量即时式函数调用] --> B
     B --> D[带时间戳的事件历史]
     D --> E[指定时刻按需解析]
     E --> F[运动真值与标定快照]
@@ -99,11 +99,11 @@ sequenceDiagram
     Timeline-->>API: 事件提交状态
     API-->>Caller: Result
     Caller->>API: Generate(at_ns, camera/imu gate)
-    API->>Seq: 校验被启用传感器的时间与编号
-    API->>Eval: 读取时刻 at_ns 的真值/标定
+    API->>Eval: 读取时刻 at_ns 的真值/标定及当时存在的传感器集合
     Eval->>Timeline: 按时间回放用户配置历史
     Timeline-->>Eval: 有效事件
-    Eval-->>API: 临时运动/传感器状态
+    Eval-->>API: 临时运动/相机集合/传感器标定状态
+    API->>Seq: 校验本次启用且在 at_ns 时存在的传感器时间与编号
     opt camera gate
         API->>Cam: 渲染当时存在的全部相机
         Cam-->>API: 临时图像帧
@@ -206,11 +206,13 @@ flowchart LR
     Consumer --> Headers["安装后的公开头文件"]
     Shared --> Eigen["Eigen3"]
     Shared --> OpenCV["OpenCV"]
-    Shared -. "按实际功能可选" .-> Sophus["Sophus / yaml-cpp"]
+    Shared -. "若使用 SO(3)/SE(3) 辅助运算" .-> Sophus["Sophus（可选）"]
+    Loader["LoadMotionConfig / 配置解析器"] -. "仅 YAML 解析" .-> YAML["yaml-cpp"]
+    Loader --> Shared
     CLI["可选 CLI / DatasetExporter"] --> Shared
 ~~~
 
-所有实体均来自**目标仓库的 Linux 安装产物或非 ROS 依赖**。消费者在安装前缀外使用 find_package 和 VisualSim::VisualSim，运行时由 Linux 动态装载器解析 .so；部署不依赖 ROS 工作空间。图中的 Sophus / yaml-cpp 表示按实际使用选择，不意味着必须引入未使用的链接依赖；构建标准和实际库版本在首次实际构建时记录，禁止强制降低用户已有工具链版本。
+所有实体均来自**目标仓库的 Linux 安装产物或非 ROS 依赖**。消费者在安装前缀外使用 find_package 和 VisualSim::VisualSim，运行时由 Linux 动态装载器解析 .so；部署不依赖 ROS 工作空间。图中的 Sophus 是按需选用的几何运算依赖；**yaml-cpp 专用于 LoadMotionConfig/配置文件解析路径（也可能被 CLI 使用）**：如果解析实现位于 .so 内，就作为 .so 的实际链接依赖，否则仅为配置解析组件/CLI 的依赖，不能误写成核心几何计算的必需依赖。未使用的库不得凭示意图引入；构建标准和实际库版本在首次实际构建时记录，禁止强制降低用户已有工具链版本。
 
 可选 CLI/Exporter 从配置文件中读时间戳运动和标定事件，再使用同一库 API 采样/写盘；原有前向匀速/纯旋转作为配置示例保留**运动能力**，但两种运动均在 Room 场景上运行。不得在 main.cpp 中重新写死运动轨迹，也不得无提示递归删除输出目录。
 

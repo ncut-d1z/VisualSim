@@ -89,7 +89,7 @@
 | V 用例 | 验收检查 | 对应 AC | 状态 |
 | --- | --- | --- | --- |
 | V01 | Ubuntu 安装 .so、无 ROS 独立消费者；Windows 配置失败；工具链不强制降级 | AC-01 | 未执行 |
-| V02 | 相同函数调用与 YAML baseline→events 序列等价；同时间事件排序稳定；未给相机标定时 YAML 和 API 均读取 §5.1 默认 K/尺寸/畸变/20 Hz | AC-02 | 未执行 |
+| V02 | 相同函数调用与 YAML baseline→events 序列等价；同时间事件排序稳定；未给相机标定时 YAML 和 API 均读取 LLD §5.1 默认 K/尺寸/畸变/20 Hz | AC-02 | 未执行 |
 | V03 | 同类覆盖、跨类组合、嵌套 BeginMotionMode/EndMotionEnd，出栈不使 p/R 意外跳变 | AC-03 | 未执行 |
 | V04 | 静止、恒速、恒加速、圆周、纯旋转、多段拼接 p/R/v/a/ω/α 与解析公式一致 | AC-04 | 未执行 |
 | V05 | 核验默认 cam0 及仅给 T_BC 的 CreateCamera 可直接按 K=(458.654,457.296,367.215,248.375)、752×480、零畸变、20 Hz、CV_8UC1 成像；默认 cam0 在已 SetCameraCalibration 或 Rename 后的首次 CreateCamera 不得覆盖它；改名 cam0→cam1 后新建相机自动跳至 cam2、SensorId/帧号不变 | AC-05 | 未执行 |
@@ -197,7 +197,7 @@ cmake --build build-consumer -j
 find ../visualsim-install -type f -name '*.so*' -print
 # 在确定主库路径后，扫描 ELF 的直接 NEEDED 和递归运行时依赖
 LIB="$(find ../visualsim-install -type f -name 'libvisualsim.so*' | head -n 1)"
-test -n "$LIB" && test -f "$LIB"
+test -n "$LIB" && test -f "$LIB" || { echo "libvisualsim.so not found under install prefix" >&2; exit 1; }
 ldd "$LIB" | tee build-visualsim-ldd.txt
 readelf -d "$LIB" | tee build-visualsim-readelf.txt
 if grep -Eiq 'rclcpp|rosidl|ament|cv_bridge|sensor_msgs|geometry_msgs|nav_msgs|libros' \
@@ -217,7 +217,6 @@ if ($LASTEXITCODE -eq 0) { throw "FAILED: Windows configuration was accepted" }
 ~~~
 
 Linux 构建日志应包含 ctest -N 的测试清单；根据实际注册的测试名称核查 V01–V11 和 V13 的覆盖情况，不能编造未实现的 CTest 名称或将“已注册”视为“已通过”。
-~~~
 
 **操作检查单**：核查链接目标/运行库不含 ROS/ament，Windows 仅失败配置，依赖版本已登记；当前阶段应执行 V02–V11、V13 等功能用例，**不执行已延期的 V12 性能验收**；采样失败无部分状态提交；多次 Raycast 不产生结果缓存；数据导出需显式目标路径且不会递归删除用户目录；来源仓库未被写入。若命令失败，记录退出码与日志，回退至上一通过阶段。
 
