@@ -112,6 +112,7 @@
 
 1. 初始登记（先于审计）：95b846efa7aaa3242c9e421d516ff4fddcbd8c6d，仅新增 AUDIT.md / AUDIT_PROGRESS.md，所有目标未审计。
 2. 第一轮实际审核：3c885a6db2915e5f8be995ca56d9b9c3cd850478，4/4 已审计、28/28 确认需要整改。
-3. 第二轮文档整改：与本版进度文件一起提交（在最终确认时登记实际 Git 提交 SHA）；只修改 ncut-d1z/VisualSim 的 docs/ 相关文件。
+3. 第二轮文档整改：cc4000b5e4b0fae1f0db50ab3acf5e48f2c4d241；仅修改目标仓库 docs/SRS.md、docs/HLD.md、docs/LLD.md、docs/IMPLEMENTATION_PLAN.md、docs/AUDIT_PROGRESS.md。
+4. 提交后远端核验：以上五份更新文件及 AUDIT.md 均已逐一比对 Git blob SHA；来源仓库 main 仍为 f1cb7a02587199ce2dfc588789f044ccae2945ed，未被本任务修改。
 
 **当前总体判断：**文档达到“审计完成、主要结构问题已整改、少数管理与性能预算待决”的**条件性设计基线**。尚不能声称全部整改已结案，更不能声称代码编译、运行、数值测试或生产验收已通过。
