@@ -217,30 +217,37 @@
 
 | 文件路径 | 状态 | 检查重点 |
 | --- | --- | --- |
-| `docs/SRS.md` | 未审计 | 相机默认行为/历史/圆周/失败要求 |
-| `docs/HLD.md` | 未审计 | 依赖边界、状态数据流、重力、部署 |
-| `docs/LLD.md` | 未审计 | 默认 K、相机身份、重力、随机过程、接口/错误、YAML |
-| `docs/IMPLEMENTATION_PLAN.md` | 未审计 | 追踪矩阵、V 用例、阶段、验收命令 |
+| `docs/SRS.md` | 已审计 | 相机默认行为/历史/圆周/失败要求 |
+| `docs/HLD.md` | 已审计 | 依赖边界、状态数据流、重力、部署 |
+| `docs/LLD.md` | 已审计 | 默认 K、相机身份、重力、随机过程、接口/错误、YAML |
+| `docs/IMPLEMENTATION_PLAN.md` | 已审计 | 追踪矩阵、V 用例、阶段、验收命令 |
 
 ### 9.2 新增 12 项候选核验目标
 
 | ID | 路径 | 风险 | 具体核验目标 | 核验结论 | 整改状态 | 证据 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R3-CAM-01 | `docs/SRS.md`、`docs/LLD.md`、`docs/HLD.md` | 高 | 核查仅输入 T_BC 创建相机或使用默认 cam0 时的默认 K、分辨率、畸变、采样率及图像像素类型是否完全定义；要求生成和标定 getter 使用同一默认。 | 待核验 | 未整改（待核验） | 待首次审计填入 |
-| R3-CAM-02 | `docs/SRS.md`、`docs/LLD.md` | 高 | 核查 t=0 默认 cam0 在已有标定/改名等显式操作后，首次 CreateCamera 应分配哪个 ID、名称，避免覆盖此前修改历史。 | 待核验 | 未整改（待核验） | 待首次审计填入 |
-| R3-IMU-01 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md` | 中 | 核查重力 g_W 在 HLD/LLD 说法与公开接口/YAML 是否一致：固定基线或完整支持可配置时间线必须明确。 | 待核验 | 未整改（待核验） | 待首次审计填入 |
-| R3-IMU-02 | `docs/LLD.md` | 中 | 检查 dyadic Brownian-bridge 根时间区间、epoch 相对纳秒和最末端 INT64_MAX 的边界可表示性，以及位流索引溢出/单位。 | 待核验 | 未整改（待核验） | 待首次审计填入 |
-| R3-IMU-03 | `docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 中 | 审查 V06-S 随机种子、样本独立性、理论方差和冻结的 99% 卡方阈值正确性及验收可执行性。 | 待核验 | 未整改（待核验） | 待首次审计填入 |
-| R3-EVT-01 | `docs/SRS.md`、`docs/LLD.md`、`docs/HLD.md` | 中 | 检查在已经生成传感器帧以后、按时间追加新事件的冻结边界，和历史任意时刻只读查询及 ResetSamplingSession 是否相容。 | 待核验 | 未整改（待核验） | 待首次审计填入 |
-| R3-MOT-01 | `docs/SRS.md`、`docs/LLD.md` | 中 | 检查 BeginMotionMode/EndMotionEnd 恢复、显式圆心/相位与普通切换的连续性/失败回滚，及示例能否按当前轨迹前提成立。 | 待核验 | 未整改（待核验） | 待首次审计填入 |
-| R3-RAY-01 | `docs/SRS.md`、`docs/LLD.md` | 中 | 核查 Raycast 在空 std::vector、非法时间/相机、逐条失败以及无命中时的结果长度与错误码约定。 | 待核验 | 未整改（待核验） | 待首次审计填入 |
-| R3-YAML-01 | `docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 中 | 核查 baseline、events、显式相机创建、默认相机和默认标定的完整等价规则，保证 YAML 示例不依赖未定义参数。 | 待核验 | 未整改（待核验） | 待首次审计填入 |
-| R3-API-01 | `docs/LLD.md`、`docs/HLD.md` | 中 | 核查公开 Simulator API、Pimpl 值语义、异常与所有权合同在默认构造、Reset 和多实例使用时是否完整。 | 待核验 | 未整改（待核验） | 待首次审计填入 |
-| R3-PLAN-01 | `docs/IMPLEMENTATION_PLAN.md` | 中 | 核查 V01–V13/V06-D/V06-S 是否覆盖默认相机/时序/重力/数值边界等新增或已批准验收，追踪主表是否闭环。 | 待核验 | 未整改（待核验） | 待首次审计填入 |
-| R3-X-01 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 中 | 复扫全部文档的命名、时间类型、Room-only、0..N 相机、无结果缓存、ROS/Windows 禁止、性能延期和 v1 状态；记录非必要改动和已符合项目。 | 待核验 | 未整改（待核验） | 待首次审计填入 |
+| R3-CAM-01 | `docs/SRS.md`、`docs/LLD.md`、`docs/HLD.md` | 高 | 核查仅输入 T_BC 创建相机或使用默认 cam0 时的默认 K、分辨率、畸变、采样率及图像像素类型是否完全定义；要求生成和标定 getter 使用同一默认。 | 确认需修 | 未整改 | LLD §2 CameraCalibration 没有默认 K/width/height/radtan/rate_hz，CreateCamera 只输入 T_BC；§9.1 默认值未定义；目前无法保证仅创建相机就可 Generate。 |
+| R3-CAM-02 | `docs/SRS.md`、`docs/LLD.md` | 高 | 核查 t=0 默认 cam0 在已有标定/改名等显式操作后，首次 CreateCamera 应分配哪个 ID、名称，避免覆盖此前修改历史。 | 确认需修 | 未整改 | SRS FR-S01/LLD §5.1 仅规定无输出帧时 t=0 首次 CreateCamera 替代虚拟 cam0；未保护已 SetCameraCalibration/Rename 的默认 cam0，自动名称与 rename 冲突时陷入 DuplicateCameraName。 |
+| R3-IMU-01 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md` | 中 | 核查重力 g_W 在 HLD/LLD 说法与公开接口/YAML 是否一致：固定基线或完整支持可配置时间线必须明确。 | 确认需修 | 未整改 | LLD §6.1 称 g_W=(0,0,-9.81)“可配置”，而 LLD §2 Simulator 无设置/查询重力接口、YAML §9.1 无重力字段；HLD §6 泛称重力参与模型。需统一是否配置。 |
+| R3-IMU-02 | `docs/LLD.md` | 中 | 检查 dyadic Brownian-bridge 根时间区间、epoch 相对纳秒和最末端 INT64_MAX 的边界可表示性，以及位流索引溢出/单位。 | 确认需修 | 未整改 | LLD §6.2 Brownian 树称区间 0..2^63 ns，但 INT64_MAX 不能表达 2^63 端点；epoch 相对纳秒、叶层和索引类型缺精确安全约束。 |
+| R3-IMU-03 | `docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 中 | 审查 V06-S 随机种子、样本独立性、理论方差和冻结的 99% 卡方阈值正确性及验收可执行性。 | 已核验无需修改 | 已整改 | LLD §6.2 8 seeds×3 axes×4096=98304, ν=98303，双侧 χ²(.005,.995)=[97164.6270,99448.8862] 数值经独立分位计算核对一致；PLAN V06-S 对齐。 |
+| R3-EVT-01 | `docs/SRS.md`、`docs/LLD.md`、`docs/HLD.md` | 中 | 检查在已经生成传感器帧以后、按时间追加新事件的冻结边界，和历史任意时刻只读查询及 ResetSamplingSession 是否相容。 | 已核验无需修改 | 已整改 | LLD §§3.3、4.1.1、8 明确事件非递减、已有样本时间前/同刻不能回写、ResetSamplingSession 不解冻，GetMotionState/Raycast 只读可历史查询；无冲突。 |
+| R3-MOT-01 | `docs/SRS.md`、`docs/LLD.md` | 中 | 检查 BeginMotionMode/EndMotionEnd 恢复、显式圆心/相位与普通切换的连续性/失败回滚，及示例能否按当前轨迹前提成立。 | 已核验无需修改 | 已整改 | SRS FR-M01/M02、LLD §2/§4.2–4.3 定义显式圆心/相位、首次位置相容、恢复策略、SetPose 单独跳变及失败回滚；示例明确仅设计示意非可编译产物。 |
+| R3-RAY-01 | `docs/SRS.md`、`docs/LLD.md` | 中 | 核查 Raycast 在空 std::vector、非法时间/相机、逐条失败以及无命中时的结果长度与错误码约定。 | 确认需修 | 未整改 | LLD §7 已确定全局/逐条失败优先级及长度规则，但对 bearings_C 为空时是成功空列表还是整体相机/时间先校验未显式冻结。 |
+| R3-YAML-01 | `docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 中 | 核查 baseline、events、显式相机创建、默认相机和默认标定的完整等价规则，保证 YAML 示例不依赖未定义参数。 | 确认需修 | 未整改 | LLD §9.1 baseline/events t0 次序已冻结且 Config 有完整 IMU 默认，但省略相机配置时缺默认 K/尺寸/畸变/采样率，与 CreateCamera(T_BC) 相同缺口。 |
+| R3-API-01 | `docs/LLD.md`、`docs/HLD.md` | 中 | 核查公开 Simulator API、Pimpl 值语义、异常与所有权合同在默认构造、Reset 和多实例使用时是否完整。 | 确认需修 | 未整改 | LLD §2.1 宣称强异常保证但仅说“局部完成后提交”；尚未明确可能的结果构造/分配失败在提交前预备、提交操作不抛异常，尤其 Generate 大批量 cv::Mat/Result 返回情况。 |
+| R3-PLAN-01 | `docs/IMPLEMENTATION_PLAN.md` | 中 | 核查 V01–V13/V06-D/V06-S 是否覆盖默认相机/时序/重力/数值边界等新增或已批准验收，追踪主表是否闭环。 | 确认需修 | 未整改 | PLAN §6 V05/V06/V08 尚未要求验证完整相机默认成像、camX 名称冲突恢复、IMU 重力约定、Brownian 上界和空 Raycast；需加入对应负例，不改编号体系。 |
+| R3-X-01 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 中 | 复扫全部文档的命名、时间类型、Room-only、0..N 相机、无结果缓存、ROS/Windows 禁止、性能延期和 v1 状态；记录非必要改动和已符合项目。 | 需联动复扫 | 未整改 | SRS/HLD/LLD/PLAN 的 Room-only、无 ROS/Windows、动态相机、纳秒、无结果缓存、性能延期一致；待整改 default camera/重力/错误语义后再判定全部闭环。 |
 
 ### 9.3 登记初值
 
 - 当前轮文件审计 **0/4**；目标核验 **0/12**；整改 **0/12**，12 项状态暂为“未整改（待核验）”，尚不能认定都是缺陷。
 - 以前两轮：28/28、20/20 均保持各自历史结案状态。
 - 未开展源码实施、构建、CTest、数据仿真或性能验收；仅允许目标仓库 docs/ 修改。
+
+### 9.4 第三轮首次正式审计结论（整改前）
+
+- **4/4 文件已审计**，12/12 项核验完成。
+- 8 项确认需要实质文档整改（R3-CAM-01/02、R3-IMU-01/02、R3-RAY-01、R3-YAML-01、R3-API-01、R3-PLAN-01）；3 项已核验满足无需修改（R3-IMU-03、R3-EVT-01、R3-MOT-01）；1 项需整改后跨文档复扫（R3-X-01）。
+- 当前状态：**已整改/无需改 3 项，未整改 9 项，待人类决策 0 项**。这些问题可在既有用户要求内解决，不修改产品范围。
+- 本次审计基线：登记提交 `b9b6bfddfbad4519e7079e1df16fa261b26bcb8f`；仅审计 Markdown，没有代码构建或测试。
