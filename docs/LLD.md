@@ -83,26 +83,33 @@ struct MotionState {
   bool derivative_discontinuous; // 切换点右侧导数标志
 };
 struct CameraCalibration {
-  Eigen::Isometry3d T_BC;       // 相机 C -> 载体 B
-  Eigen::Matrix3d K;
-  int width;
-  int height;
-  std::array<double,4> radtan;  // k1,k2,p1,p2
-  double nominal_rate_hz;
+  Eigen::Isometry3d T_BC = Eigen::Isometry3d::Identity(); // C -> B
+  Eigen::Matrix3d K =
+      (Eigen::Matrix3d() << 458.654, 0.0, 367.215,
+                            0.0, 457.296, 248.375,
+                            0.0,   0.0,     1.0).finished();
+  int width = 752;
+  int height = 480;
+  std::array<double,4> radtan{0.0,0.0,0.0,0.0}; // k1,k2,p1,p2
+  double nominal_rate_hz = 20.0;
 };
 struct ImuCalibration {
-  Eigen::Isometry3d T_BS;       // IMU S -> 载体 B
-  double nominal_rate_hz;
-  double gyroscope_noise_density;
-  double gyroscope_random_walk;
-  double accelerometer_noise_density;
-  double accelerometer_random_walk;
-  Eigen::Vector3d initial_gyro_bias_S;
-  Eigen::Vector3d initial_accel_bias_S;
-  bool noise_enabled;
-  std::uint64_t seed;
+  Eigen::Isometry3d T_BS = Eigen::Isometry3d::Identity(); // S -> B
+  double nominal_rate_hz = 200.0;
+  double gyroscope_noise_density = 0.0;
+  double gyroscope_random_walk = 0.0;
+  double accelerometer_noise_density = 0.0;
+  double accelerometer_random_walk = 0.0;
+  Eigen::Vector3d initial_gyro_bias_S = Eigen::Vector3d::Zero();
+  Eigen::Vector3d initial_accel_bias_S = Eigen::Vector3d::Zero();
+  bool noise_enabled = false;
+  std::uint64_t seed = 0;
 };
-struct RoomConfig { double depth_m, width_m, height_m; };
+struct RoomConfig {
+  double depth_m = 10.0;
+  double width_m = 10.0;
+  double height_m = 3.0;
+};
 struct CameraHandle { SensorId id; std::string name; };
 struct SensorGate { bool camera=false; bool imu=false; };
 struct ImuMeasurement {
@@ -153,7 +160,7 @@ public:
                        const Eigen::Matrix3d& rotation_WB);
 
   Result<CameraHandle> CreateCamera(
-      TimestampNs effective_ns, const Eigen::Isometry3d& T_BC);
+      TimestampNs effective_ns, const Eigen::Isometry3d& T_BC); // 默认 K/尺寸/畸变/采样率
   Result<void> RenameCamera(TimestampNs effective_ns,
                             SensorId camera_id, std::string_view new_name);
   Result<void> SetCameraCalibration(TimestampNs effective_ns,
@@ -190,7 +197,8 @@ private:
 - 所有公开可失败操作统一返回 Result<T> 或 Result<void>；成功时 status=Ok，非 void 必有 value；失败时非 void 无 value 且 message 非空。Result<void> 不具有 value；空门控 Generate 返回 Ok 与空 frames。
 - v1 的 Status 枚举名称和显式数值保持稳定；message 是人工诊断，不是可解析协议。可预期的非法参数、时间、相机和配置使用已有对应状态码，而不是笼统 InternalError。
 - **第三方异常翻译**：yaml-cpp 的解析/重复键/字段类型错误、配置读取中的文件系统/IO 错误映射为 InvalidConfigSchema（message 记录 YAML 路径/字段）；OpenCV 的 cv::Exception、未分类 yaml-cpp 异常、其他可捕获的第三方或 std::exception 统一翻译为 InternalError（保留诊断）；可捕获的未知异常同样翻译为 InternalError。上述异常均不能穿过公开接口。
-- **仅 std::bad_alloc 可穿越 C++ 公开边界**，前提是同一兼容工具链；它也不得留下半提交。Setter、Begin/End、Create/Rename、LoadMotionConfig、Generate 和 ResetSamplingSession 的失败或可捕获异常均具**强状态保证**：先验证并在局部完成全部计算，再一次提交；任何错误都不得改变已提交事件、相机 ID/编号、配置、协议时间和帧号。事件导入不能只提交部分事件。
+- **仅 std::bad_alloc 可穿越 C++ 公开边界**，前提是同一兼容工具链；它也不得留下半提交。Setter、Begin/End、Create/Rename、LoadMotionConfig、Generate 和 ResetSamplingSession 的失败或可捕获异常均具**强状态保证**：任何错误都不得改变已提交事件、相机 ID/编号、配置、协议时间和帧号。事件导入不能只提交部分事件。
+- **事务的提交点与返回安全（v1 冻结）**：先在单次调用局部空间完成所有可能抛异常的验证、历史事件/相机注册结构扩容、图像 cv::Mat 分配、IMU 计算、完整 Result/SampleBatch 及错误消息构造；之后以不抛异常的状态交换/已预分配字段赋值提交事件与最小协议计数器。对返回对象，必须使提交后的返回路径为 noexcept move 或可证明不会分配的返回构造；若具体类型无法保证，需在提交前返回对象准备阶段完成必要分配，或采用可回滚事务，**不能先递增帧号再因构造/返回 Result 失败而破坏强保证**。相关 noexcept 约束应在实现时以类型特性和故障注入验证，不以当前文档宣布编译已通过。
 - Eigen 不保证以异常报告违反前置条件的断言，调用前须验证维度、有限值、SO(3)、向量合法性；不可恢复的进程中止不属于异常返回协议。只读 Get*/Raycast 不改变状态；Raycast 全局错误和逐条失败按 §7 区分。
 
 ### 2.2 线程安全与多实例
@@ -200,7 +208,7 @@ private:
 ### 2.3 数据所有权、生命周期与二进制兼容边界
 
 - Simulator 用 Pimpl（Impl 在 .cpp 定义）隐藏内部状态；公开值类型是**值语义**。GetChangeHistory、ListCameras、Raycast 和 Generate 返回独立 std::vector；返回体在 Simulator 销毁后仍有效。
-- 图像结果中的 cv::Mat 由每次生成单独分配，返回时转移/共享该帧独立的 OpenCV 引用计数缓冲；后续 Generate 不重用可写底层存储，调用者可安全持有或释放。若要完全独立复制可在调用方 clone；库不保存历史 cv::Mat。
+- v1 相机图像**默认且本版固定为 8 位单通道灰度 CV_8UC1**，尺寸严格等于各自有效 CameraCalibration 的 width×height；没有静默 RGB/BGR 转换。图像结果中的 cv::Mat 由每次生成单独分配，返回时转移/共享该帧独立的 OpenCV 引用计数缓冲；后续 Generate 不重用可写底层存储，调用者可安全持有或释放。若要完全独立复制可在调用方 clone；库不保存历史 cv::Mat。
 - Pimpl 只减少布局暴露，**不提供跨编译器、libstdc++ 或 OpenCV/Eigen 版本的稳定二进制 ABI**。初始 API/SONAME 主版本为 1；破坏公开类型/布局/异常 ABI 时须升级 SONAME 和 CMake package 主版本。目标只保证相同兼容 Linux ABI/工具链及依赖版本的消费者可运行。
 - 输出时间、名称、帧号等属于返回对象所有，不借用临时字符串指针；仅在 RayHit.hit=true 时读取 point_W_m、range_m 和 surface_name。
 
@@ -367,18 +375,23 @@ $$
 
 ### 5.1 注册、默认相机与重命名规则
 
-CameraRegistry 的 SensorId 稳定且不会重用，名称按时刻解析。自动名称固定依次 cam0、cam1、cam2……，更名不回收自动序号，也不更改此前帧的 id/编号。
+CameraRegistry 的 SensorId 稳定且不会重用，名称按时刻解析。自动名称优先使用 cam0、cam1、cam2……，**若后续后缀已被合法重命名占用则跳过并继续递增**；更名不回收已发行自动序号，也不更改此前帧的 ID/编号。
 
 **默认与显式创建的定稿规则（避免查询引起隐式状态突变）：**
 
 - 起点 t=0 的初始配置视作有一台**虚拟默认** cam0（T_BC=(I3,0)），无需真正修改事件历史；只读 Raycast/ListCameras 不会“创建”对象。
-- 如果第一条 CreateCamera 事件的生效时间恰为 0，且此前没有任何成功生成帧，则第一台显式相机**替代虚拟默认值、占用稳定 ID=0 和名称 cam0**，而非增加 cam1；这是仿真初始化阶段的注册。
-- 如果第一条 CreateCamera 的生效时间大于 0，则此前的虚拟默认 cam0 从 t=0 起存在，新相机自该事件时刻成为 cam1。这样过去历史与无副作用查询有确定结果。
-- 若已在 t=0 成功生成默认 cam0 的帧，则 t=0 的后续 CreateCamera 被 EventHistoryFrozen 拒绝，不能将已输出传感器身份替换。
-- 后续每次注册用下一个自动 ID/名称；若自动名称与调用者先前 RenameCamera 形成占用冲突，必须明确返回 DuplicateCameraName，不能覆盖或重用其他相机身份。
+- 只有**首条 CreateCamera 的生效时间为 0、此前没有任何针对虚拟默认 cam0 的 SetCameraCalibration/RenameCamera 等显式修改事件、也没有采样成功记录**时，首个显式相机才能以调用者 T_BC **替代尚未使用的虚拟默认配置**，占用稳定 SensorId=0 和名称 cam0；新相机其他标定字段取本节固定默认值。
+- 如果首条 CreateCamera 的生效时间大于 0，或者此前已在 t=0 通过合法事件修改过虚拟 cam0，则保留原有 cam0 的**不可变身份及所有历史标定/名称**；本次 CreateCamera 分配新 SensorId（通常为 1）与后续可用 camX 名称，不得覆盖旧 cam0。对默认 cam0 的先前只读查询不会引发实质创建事件，不影响这个判定。
+- 若已在某时刻成功生成传感器帧，任何 CreateCamera 生效时间小于或等于该已生成帧时间的请求须先按 §3.3 返回 EventHistoryFrozen；不能利用 CreateCamera 替代已输出的传感器身份。
+- 自动 SensorId 逐次单调递增，永不重用；**自动 camX 名称的数字后缀与 SensorId 不要求相等**。分配新名称时，从 next_auto_camera_index 起单调扫描，遇当前时刻已由其他相机占用、或历史上曾自动分配过的 camX 编号则跳过，选择下一个可用 camX；跳过的编号亦不回收。即使此前 RenameCamera 把 cam0 改成 cam1，也应让之后 CreateCamera 自动选择 cam2（而不是一直返回 DuplicateCameraName）。RenameCamera **显式指定与其他相机当前名称冲突**才返回 DuplicateCameraName，且不得更改名称历史。
+- 显式创建、默认相机和之后的新相机使用相同的默认图像标定，除非调用者以带时间戳的 SetCameraCalibration 覆盖。
 - RenameCamera(t,id,new_name) 禁止空名称、与该时刻其他相机同名；修改只影响 t 以后，旧历史使用旧名。后续生成使用新名，但同一 SensorId 的时间去重和 frame_number 保持连续。
 
 事件历史包括所有显式 CreateCamera、RenameCamera 和标定变更。GetCameraCalibration(t,id)、ListCameras(t)、Raycast(t,name) 查询只采纳 t 时有效的定义，不依赖此前 Generate 是否调用。
+
+**v1 的完整相机默认标定（与目标仓库当前单目生成器基线一致）：** 宽 752、高 480 像素；fx=458.654、fy=457.296、cx=367.215、cy=248.375、skew=0，K 第三行为 (0,0,1)；radial-tangential 畸变系数 (k1,k2,p1,p2)=(0,0,0,0)；nominal_rate_hz=20.0。默认 cam0 的 T_BC=(I3,0)；CreateCamera(t,T_BC) 创建任何新相机时只覆盖该 T_BC，**其余默认字段按上述值确定，随后可被 SetCameraCalibration 在有效时间覆盖**。相机图像固定输出 CV_8UC1 灰度（§2.3），外部 caller 可以直接按当前默认标定生成图像和读取 GetCameraCalibration，不需要额外初始化调用。
+
+**nominal_rate_hz 是标称元数据**，不触发后台生成、不限制调用者选择纳秒采样时刻；传感器 Generate 的时间仍按 §8 验证逐流严格递增。初始化后的有效相机配置以 getter 返回为准，禁止导出的 sensor.yaml 与实际投影标定不一致。
 
 ### 5.2 外参与相机成像
 
@@ -405,7 +418,7 @@ $$
 
 ### 6.1 刚性外参、比力和角速度
 
-已知状态 p_WB、R_WB、a_WB、ω_B、α_B，IMU 到载体的 T_BS=(R_BS,t_BS)，世界重力 g_W=(0,0,−9.81) m/s²（可配置）。
+已知状态 p_WB、R_WB、a_WB、ω_B、α_B，IMU 到载体的 T_BS=(R_BS,t_BS)，世界系重力**固定为** g_W=(0,0,−9.81) m/s²。**v1 不提供 SetGravityWorld 或重力的 YAML/事件配置**：重力是这一版的常量环境约定，始终参与比力模型；如需更改，需要明确升版扩展公共设置/查询接口、事件历史与 YAML，而不是在实现里加入不留历史的隐藏 setter。
 
 $$
 a_{WS}=a_{WB}+R_{WB}\Bigl(\alpha_B\times t_{BS}
@@ -434,7 +447,9 @@ $$
 
 **偏置随机游走不用历史样本/偏置缓存**：定义连续时间 b(t)=b_initial+K·W(t−t_epoch)，其中 t_epoch 为最近一次 IMU 标定/噪声设置事件的生效时刻，W 是按纳秒整数时间可寻址的零均值布朗运动，Cov(W(s),W(t))=min(s,t)（秒）。每次显式 SetImuCalibration 定义新的 t_epoch、seed 和 b_initial，形成新的随机过程 epoch；不隐式继承旧 epoch 已积累的偏置。
 
-给出确定性且**不保存跨查询中间状态**的实现方案：对 0..2^63 ns 的时间域使用固定二叉 dyadic Brownian-bridge 树。根区间总增量为 sqrt(T_s)·Z(root)；每个区间长度 L_s 已知父区间总增量 Δ，则左半区增量由 Δ/2+sqrt(L_s/4)·Z(node) 给出，右半区增量为 Δ−左半区增量；Z 由固定 counter-based 64-bit hash（SplitMix64 与 Box–Muller，按以下固定规则定义）按 seed、epoch、轴和节点索引确定。沿根至目标纳秒时刻的路径求和，最多 63 层，得到可重现 W(t)；无需缓存任何 IMU 样本或偏置状态。布朗桥保证时间一致的增量协方差。生成时仅保留局部运算中间量。
+**固定时间根域与整数边界（v1 冻结）**：以最近一次噪声设置事件 t_epoch 为相对时间原点，先验证 0≤t_epoch≤t≤INT64_MAX，再计算有符号非负差 t−t_epoch，并转换为 std::uint64_t 的 relative_ns，故 0≤relative_ns≤INT64_MAX。抽象二叉 dyadic Brownian-bridge 树的根采用**左闭右开**区间 [0,2^63) ns，长度采用 uint64_t(1)<<63 表示；右端点 2^63 **不是** std::int64_t 可表示的 TimestampNs，因此实现绝不把该右端点转换为 TimestampNs，也不计算可能溢出的有符号 t_epoch+2^63。节点起点、相对偏移、树层级和节点索引使用无符号整数；整树共有 63 层二分至 1 ns 叶，查询 t_epoch 时 W(0)=0 精确成立，t=INT64_MAX 仍落在半开根区间内。任何时间差或无符号索引运算都须检测不合法范围，不能发生隐式有符号溢出。
+
+随机过程在该根域内按时间一致的确定性 Brownian bridge 生成：根区间长度 T_s=(2^63 ns)×10^-9 s，根增量为 sqrt(T_s)·Z(root)。对子区间长度 L_s、已知父区间增量 Δ，左半区增量为 Δ/2+sqrt(L_s/4)·Z(node)，右半区增量为 Δ−左半区增量；Z 由下述固定 SplitMix64 + Box–Muller 键规则（seed、epoch、轴、节点相对起点和层级）产生。沿根至 relative_ns 的 dyadic 分割累加已覆盖子区间增量，最多 63 层，得 W(relative_ns)；**不保存**中间节点、先前偏置或 IMU 样本。布朗增量的方差以秒为单位，任意固定纳秒节点的零均值协方差遵循 Cov(W(s),W(t))=min(s,t)（秒）。
 
 v1 的伪随机位流固定使用 SplitMix64 置换：先对 64 位无符号键加 0x9E3779B97F4A7C15，依次令 x=(x xor (x>>30))*0xBF58476D1CE4E5B9、x=(x xor (x>>27))*0x94D049BB133111EB、x=x xor (x>>31)，全部按 64 位模 2^64 运算。键的混合顺序固定为：令 key=seed，依次对固定域标签（白噪声=1、布朗桥根=2、布朗桥内部结点=3）、配置事件 insertion_order、sensor_id、轴号(0..5)、采样时刻或结点起点的整数纳秒、结点层级、独立高斯分量编号，执行 key=SplitMix64(key xor SplitMix64(该字段的 uint64_t 位模式))。白噪声使用请求时刻；布朗桥使用结点起点和层级；不同域和轴具有不同键空间。分别以高斯分量编号 0、1 构造两个置换输出，高 53 位整数 m 映射为 u=(m+0.5)·2^(-53)，产生开区间 (0,1) 的 U1/U2，采用 Box–Muller Z=√(−2 ln U1) cos(2πU2)。这一定义固定了 v1 的随机过程家族与索引规则；受标准数学库浮点实现差异影响，**仅承诺同工具链/同构建的逐值可复现**，不承诺跨 libc/架构 bitwise 相同。
 
@@ -488,7 +503,7 @@ $$
 | 单条 3 | 有效视线在 Room 上没有正向有限表面交点 | 对应输入索引 NoIntersection |
 | 单条 4 | 所有检查通过，存在最近有限面有效正向交点 | 对应输入索引 Ok，hit=true |
 
-**先整体验证，再按每条视线的单条 1→4 顺序判定**，首个适用失败原因获胜。整体失败返回无 value；单条失败只填该 RayHit 的 index、hit=false、failure，其他几何字段不具备有效含义。只要整体校验成功，即使所有输入视线单条失败也返回 Result.status=Ok 和与输入长度相等的 RayHit 向量；不存在“所有未命中就整体 NoIntersection”的特例。对于时间下无该名称却历史上曾存在的改名相机，按该时刻名称不可解析返回 CameraNotFound，避免把重命名错当作未创建。
+**先整体验证，再按每条视线的单条 1→4 顺序判定**，首个适用失败原因获胜。**当 bearings_C.size()==0 时，也必须先校验 time_ns 与指定 camera_name：若有效，则返回 Ok 和长度为 0 的 std::vector<RayHit>，不执行任何射线计算；若时间/相机无效，则按上表返回对应整体错误，不能因为输入为空而跳过全局校验。**整体失败返回无 value；单条失败只填该 RayHit 的 index、hit=false、failure，其他几何字段不具备有效含义。只要整体校验成功，即使所有输入视线单条失败也返回 Result.status=Ok 和与输入长度相等的 RayHit 向量；不存在“所有未命中就整体 NoIntersection”的特例。对于时间下无该名称却历史上曾存在的改名相机，按该时刻名称不可解析返回 CameraNotFound，避免把重命名错当作未创建。
 
 **Raycast 不依赖任何跨调用位姿缓存，也不要求 t 被 Generate 用过**；可以反复读过去 t，不能影响当前运动/配置历史和任何传感器序号。
 
@@ -609,7 +624,7 @@ reactivation_policy: ReanchorOnReactivation
 
 除首次激活时的圆心/位姿一致性外，重入时按 §4.2 的 reactivation_policy 决定是否允许重新锚定，配置解析不得丢弃声明圆心、相位或策略。
 
-若不含显式 CreateCamera，自动使用默认 cam0，T_BC=(I3,0)；若在 t=0 使用 CreateCamera，首台显式相机占 cam0 身份，详见 §5.1。baseline 允许省略 pose/room/imu 的整项，此时分别采用零位姿、Room (10m,10m,3m)、IMU 单位外参与无噪默认参数（标称频率 200Hz，其余噪声和初始偏置为 0，seed=0）。baseline 内一旦出现某项对象，则该对象的所有规定字段必填，避免半更新含义不明确。
+如果未显式创建相机，默认从 t=0 存在虚拟 cam0，T_BC=(I3,0)，且 K/分辨率/零畸变/标称频率完全采用 §5.1 的冻结默认值。**只有此前未修改默认 cam0 的标定/名称、也未产生传感器帧时**，第一条 t=0 的 CreateCamera 才会取代未使用的虚拟默认 cam0；其他情形保留 cam0 并为新相机分配下一个不冲突的 camX（见 §5.1）。所有仅提供 T_BC 的 CreateCamera 也采用同一默认 K、752×480、radtan=(0,0,0,0)、20 Hz，允许随后以完整 SetCameraCalibration 覆盖；因此 YAML 样例中的相机可在未另设内参的情况下立即生成图像。baseline 允许省略 pose/room/imu 的整项，此时分别采用零位姿、Room (10m,10m,3m)、IMU 单位外参与无噪默认参数（标称频率 200Hz，其余噪声和初始偏置为 0，seed=0）。baseline 内一旦出现某项对象，则该对象的所有规定字段必填，避免半更新含义不明确。
 
 **验证与事务规则：**
 
@@ -617,7 +632,7 @@ reactivation_policy: ReanchorOnReactivation
 2. timestamp_ns、sampling 中的 *_times_ns 必须是 YAML 十进制**整数**，在 std::int64_t 非负范围，禁止浮点数、科学计数法、溢出或字符串冒充纳秒。baseline 在 t=0 **始终先于 events**，按 room→pose→imu 固定顺序合成历史事件；events 时间须非递减，同刻以数组顺序确定其后续 insertion_order（§9.1 开头已冻结覆盖规则）。
 3. quaternion 顺序固定 **w,x,y,z**；位置/平移 [x,y,z]，K_row_major 是 3×3 按行展开的 9 个数，radtan 为 [k1,k2,p1,p2]。imuread 读取的 noise density 单位由 §6.2 固定。
 4. LoadMotionConfig(path) 仅允许用于**尚无显式业务事件且尚未输出帧**的新实例；整个文档先解析、验证、重建局部状态，成功才整体提交，任一错误则原对象完全不变。错误 message 包含可读 YAML 路径（如 events[3].value.axis_B），调用者以 Status 判断错误类别。
-5. sampling 是**CLI 导出请求计划**，不是运动/标定修改事件；库的 LoadMotionConfig 只验证其结构并不隐式生成数据或写文件。CLI 将两个 *_times_ns 合并、升序调度，每时刻为对应门控合并一次 Generate。不同传感器可同时间采样，单一传感器时间序列必须严格递增。
+5. sampling 是**CLI 导出请求计划**，不是运动/标定修改事件；库的 LoadMotionConfig 只验证其结构并不隐式生成数据或写文件。新建模拟器若在未显式设置相机参数时直接按 sampling 生成图像，则输出默认尺寸 752×480、像素格式 CV_8UC1，必须使用 §5.1 的默认标定；不允许因为省略 K/width/height 而使用未初始化值。CLI 将两个 *_times_ns 合并、升序调度，每时刻为对应门控合并一次 Generate。不同传感器可同时间采样，单一传感器时间序列必须严格递增。
 6. 读取和写出的配置应保留事件顺序、标定数值及版本标记；库内事件历史 ChangeRecord 的 canonical_payload_yaml 可使用这里定义的 value 同构序列化，不得把计算出的图像或位姿追加进历史。
 
 ### 9.2 CMake / 安装行为
