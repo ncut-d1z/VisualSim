@@ -1,6 +1,6 @@
 # VisualSim 运行时库详细设计（LLD）
 
-> 本文是设计草案，尚未实施。最终功能以 [SRS.md](SRS.md) 为准，架构见 [HLD.md](HLD.md)，工程实施/代码迁移见 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)。
+> 本文为待实施的 **v1 详细设计合同**，不是已实现或已通过测试的证明。最终功能以 [SRS.md](SRS.md) 为准，架构见 [HLD.md](HLD.md)，工程实施/代码迁移见 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)。
 >
 > 本文中的文件名、类型和函数签名是**拟议实现**，并不表示当前仓库已有对应 API。唯一可写目标仓库为 ncut-d1z/VisualSim。来源仓库 ncut-d1z/ros2-vio-node 只读。平台 Ubuntu 24.04，禁止 Windows 构建；不强制降级构建工具链。
 
@@ -8,39 +8,61 @@
 
 **允许长时间保留的业务数据**仅为：当前运动类别/模式/参数/作用域栈、当前相机/IMU/Room 配置、调用者对此进行每次修改的**带纳秒时间戳事件历史**。这些数据足以重建任意有效时刻的物理状态。
 
-不得保留上一设计中的 PoseCache、StereoPoseSnapshot、最近 64 组双目位姿、历史图片、历史 IMU 样本、历史射线命中、按帧运动状态或任何积分结果缓存。允许单次调用内部的临时局部对象；调用结束即释放。由于必须拒绝重复时间和连续编号，还需要各传感器最近成功生成时间与 next_frame_number 两项**最小协议控制变量**，不将其扩展为帧队列或结果索引。
+不得持久保存历史图片、IMU 样本、相机位姿、射线命中、按帧运动状态或任何历史运动积分结果缓存。允许单次调用内部的临时局部对象；调用结束即释放。由于必须拒绝重复时间和连续编号，还需要各传感器最近成功生成时间与 next_frame_number 两项**最小协议控制变量**，不将其扩展为帧队列或结果索引。
 
 本设计**不使用历史图像帧存在性**作为 Raycast 的前置条件；Raycast 通过事件历史按需计算查询时刻的位姿。
 
-## 2. 公开接口草案
+## 2. 已确定的公开接口合同（设计基线 v1）
 
-全部纳秒字段采用**完全相同的 std::int64_t** 类型。使用 Eigen 做坐标与矩阵，OpenCV cv::Mat 作为图像输出。以下仅表达公共合同，可按代码规范微调函数/类型布局。
+此处定义**未来实现的接口合同 v1**，不是声称当前源码已实现。原型中不再采用“按代码规范微调”的非冻结口径；任何破坏签名/语义的后续修改均须同步更新 SRS、HLD、LLD、API 版本及追踪。
 
 ~~~cpp
 namespace visualsim {
 using TimestampNs = std::int64_t;
+using SensorId = std::uint64_t;
 static_assert(std::is_same_v<TimestampNs, std::int64_t>);
 
-enum class LinearMode {
-  Stationary, ConstantVelocity, ConstantAcceleration, UniformCircular
+enum class Status : std::uint32_t {
+  Ok=0, InvalidArgument=1, InvalidMode=2, InvalidTimestamp=3,
+  EventOutOfOrder=4, EventHistoryFrozen=5, UnmatchedMotionScope=6,
+  InvalidCalibration=7, CameraNotFound=8, DuplicateCameraName=9,
+  NoCameraAtTime=10, DuplicateTimestamp=11, OutOfOrderTimestamp=12,
+  TimeOutOfRange=13, NoIntersection=14, InvalidBearing=15,
+  OutsideFov=16, InvalidConfigSchema=17,
+  UnsupportedAngularAcceleration=18, InternalError=19
 };
-enum class AngularMode {
-  Stationary, FixedAxisConstantRotation
+template<class T> struct Result {
+  Status status;                 // Ok 或稳定枚举错误码
+  std::optional<T> value;       // 仅 status == Ok 时有值
+  std::string message;          // 可读诊断，不作为机器解析依据
+};
+template<> struct Result<void> {
+  Status status;
+  std::string message;          // 没有 value
 };
 
-struct LinearMotionSpec {
-  LinearMode mode;
-  Eigen::Vector3d velocity_W_mps;         // 匀速 / 匀加速初速度
-  Eigen::Vector3d acceleration_W_mps2;    // 匀加速
-  Eigen::Vector3d orbit_radius_W_m;       // 圆周生效瞬间的有向半径
-  Eigen::Vector3d orbit_normal_W;         // 单位轨道法向
-  double orbit_rate_radps;                // 有符号圆周角速率
+struct LinearStationary {};
+struct LinearConstantVelocity { Eigen::Vector3d velocity_W_mps; };
+struct LinearConstantAcceleration {
+  Eigen::Vector3d initial_velocity_W_mps;
+  Eigen::Vector3d acceleration_W_mps2;
 };
-struct AngularMotionSpec {
-  AngularMode mode;
-  Eigen::Vector3d axis_B;                // B 系单位轴
-  double angular_rate_radps;             // 有符号角速率
+struct LinearUniformCircular {
+  Eigen::Vector3d radius_W_m;   // 相对生效位置的初始有向半径
+  Eigen::Vector3d normal_W;     // 单位法向，与半径正交
+  double rate_radps;            // 有符号轨道角速率
 };
+using LinearMotionSpec = std::variant<
+  LinearStationary, LinearConstantVelocity,
+  LinearConstantAcceleration, LinearUniformCircular>;
+
+struct AngularStationary {};
+struct AngularFixedAxisRotation {
+  Eigen::Vector3d axis_B;       // 单位固定轴
+  double rate_radps;            // 有符号角速率
+};
+using AngularMotionSpec = std::variant<
+  AngularStationary, AngularFixedAxisRotation>;
 
 struct MotionState {
   Eigen::Vector3d position_W_m;
@@ -49,20 +71,18 @@ struct MotionState {
   Eigen::Vector3d acceleration_W_mps2;
   Eigen::Vector3d angular_velocity_B_radps;
   Eigen::Vector3d angular_acceleration_B_radps2;
-  bool derivative_discontinuous = false; // 配置切换边界
+  bool derivative_discontinuous; // 切换点右侧导数标志
 };
-
 struct CameraCalibration {
-  Eigen::Isometry3d T_BC;   // 相机 C -> 载体 B
+  Eigen::Isometry3d T_BC;       // 相机 C -> 载体 B
   Eigen::Matrix3d K;
   int width;
   int height;
-  // k1,k2,p1,p2
-  std::array<double, 4> radtan;
+  std::array<double,4> radtan;  // k1,k2,p1,p2
   double nominal_rate_hz;
 };
 struct ImuCalibration {
-  Eigen::Isometry3d T_BS;    // IMU S -> 载体 B
+  Eigen::Isometry3d T_BS;       // IMU S -> 载体 B
   double nominal_rate_hz;
   double gyroscope_noise_density;
   double gyroscope_random_walk;
@@ -73,102 +93,109 @@ struct ImuCalibration {
   bool noise_enabled;
   std::uint64_t seed;
 };
-struct RoomConfig {
-  double depth_m;
-  double width_m;
-  double height_m;
-};
-
-struct SensorGate {
-  bool camera = false;      // 当前已注册的所有相机
-  bool imu = false;
-};
+struct RoomConfig { double depth_m, width_m, height_m; };
+struct CameraHandle { SensorId id; std::string name; };
+struct SensorGate { bool camera=false; bool imu=false; };
 struct ImuMeasurement {
   Eigen::Vector3d angular_velocity_S_radps;
   Eigen::Vector3d specific_force_S_mps2;
 };
 struct SensorFrame {
   TimestampNs timestamp_ns;
+  SensorId sensor_id;           // 改名后仍不变
   std::string sensor_name;
   std::uint64_t frame_number;
   std::variant<cv::Mat, ImuMeasurement> payload;
 };
 struct SampleBatch { std::vector<SensorFrame> frames; };
-
 struct RayHit {
   std::size_t input_index;
   bool hit;
-  Eigen::Vector3d point_W_m;
-  double range_m;
-  std::string surface_name;
-  std::string reason;
+  Eigen::Vector3d point_W_m;   // 仅命中时有效
+  double range_m;              // 仅命中时有效
+  std::string surface_name;    // 仅命中时有效
+  Status failure;              // 命中时 Ok
 };
-
-enum class Status {
-  Ok, InvalidArgument, InvalidMode, InvalidTimestamp, EventOutOfOrder,
-  EventHistoryFrozen, UnmatchedMotionScope, InvalidCalibration,
-  CameraNotFound, DuplicateCameraName, NoCameraAtTime,
-  DuplicateTimestamp, OutOfOrderTimestamp, TimeOutOfRange,
-  NoIntersection, UnsupportedAngularAcceleration, InternalError
-};
-template<class T> struct Result {
-  Status status;
-  std::optional<T> value;
-  std::string message;
-};
-
 struct ChangeRecord {
   TimestampNs effective_time_ns;
   std::uint64_t insertion_order;
-  std::string object_kind; // motion/scope/camera/imu/room/pose
+  std::string object_kind;
   std::string operation;
-  // typed or serialized new value, no computed frame/pose results
+  std::string canonical_payload_yaml; // schema v1 的序列化新参数
 };
 
-class Simulator {
+class Simulator final {
 public:
-  Status BeginMotionMode(TimestampNs effective_ns);
-  Status EndMotionEnd(TimestampNs effective_ns);
-  Status SetLinearMotion(TimestampNs effective_ns,
-                         const LinearMotionSpec&);
-  Status SetAngularMotion(TimestampNs effective_ns,
-                          const AngularMotionSpec&);
-  Status SetPose(TimestampNs effective_ns,
-                 const Eigen::Vector3d& position_W_m,
-                 const Eigen::Matrix3d& rotation_WB);
+  Simulator();
+  ~Simulator();                              // 在 .cpp 定义
+  Simulator(Simulator&&) noexcept;
+  Simulator& operator=(Simulator&&) noexcept;
+  Simulator(const Simulator&) = delete;
+  Simulator& operator=(const Simulator&) = delete;
 
-  Result<std::string> CreateCamera(TimestampNs effective_ns,
-                                   const Eigen::Isometry3d& T_BC);
-  Status RenameCamera(TimestampNs effective_ns,
-                      std::string_view camera_id_or_name,
-                      std::string_view new_name);
-  Status SetCameraCalibration(TimestampNs effective_ns,
-                              std::string_view camera_id_or_name,
-                              const CameraCalibration&);
-  Status SetImuCalibration(TimestampNs effective_ns,
-                           const ImuCalibration&);
-  Status SetRoom(TimestampNs effective_ns, const RoomConfig&);
+  Result<void> BeginMotionMode(TimestampNs effective_ns);
+  Result<void> EndMotionEnd(TimestampNs effective_ns);
+  Result<void> SetLinearMotion(TimestampNs effective_ns,
+                               const LinearMotionSpec&);
+  Result<void> SetAngularMotion(TimestampNs effective_ns,
+                                const AngularMotionSpec&);
+  Result<void> SetPose(TimestampNs effective_ns,
+                       const Eigen::Vector3d& position_W_m,
+                       const Eigen::Matrix3d& rotation_WB);
+
+  Result<CameraHandle> CreateCamera(
+      TimestampNs effective_ns, const Eigen::Isometry3d& T_BC);
+  Result<void> RenameCamera(TimestampNs effective_ns,
+                            SensorId camera_id, std::string_view new_name);
+  Result<void> SetCameraCalibration(TimestampNs effective_ns,
+                                    SensorId camera_id, const CameraCalibration&);
+  Result<void> SetImuCalibration(TimestampNs effective_ns,
+                                 const ImuCalibration&);
+  Result<void> SetRoom(TimestampNs effective_ns, const RoomConfig&);
   Result<CameraCalibration> GetCameraCalibration(
-      TimestampNs at_ns, std::string_view camera_name) const;
+      TimestampNs at_ns, SensorId camera_id) const;
   Result<ImuCalibration> GetImuCalibration(TimestampNs at_ns) const;
-
+  Result<RoomConfig> GetRoom(TimestampNs at_ns) const;
+  Result<std::vector<CameraHandle>> ListCameras(TimestampNs at_ns) const;
   Result<MotionState> GetMotionState(TimestampNs at_ns) const;
-  std::vector<ChangeRecord> GetChangeHistory() const;
-  Status LoadMotionConfig(std::string_view path); // 等效事件顺序
+  Result<std::vector<ChangeRecord>> GetChangeHistory() const;
+  Result<void> LoadMotionConfig(const std::filesystem::path& yaml_path);
 
   Result<SampleBatch> Generate(TimestampNs at_ns, SensorGate);
   Result<std::vector<RayHit>> Raycast(
-      TimestampNs at_ns,
-      const std::vector<Eigen::Vector3d>& bearings_C,
+      TimestampNs at_ns, const std::vector<Eigen::Vector3d>& bearings_C,
       std::string_view camera_name = "cam0") const;
-  void ResetSamplingSession();  // 不丢弃运动/标定修改历史
+  Result<void> ResetSamplingSession();  // 保留运动/标定历史
+
+private:
+  class Impl;
+  std::unique_ptr<Impl> impl_;
 };
 } // namespace visualsim
 ~~~
 
-说明：CreateCamera(T_BC) 必须创建新相机；SetCameraCalibration/单独 SetCameraExtrinsics 用于修改**现有**相机而不是隐式替换为另一台。若需要完整的配置文件兼容，可加 CreateCamera(name, T_BC) 的可选名称重载，确保唯一性及自动编号规则。
+### 2.1 返回值、错误与异常
 
-数据修改接口的生效时间必须是 TimestampNs，不能只附一个没有生效时间的全局 setter。若提供便捷“立即修改”重载，也必须明确使用哪个纳秒时刻、写入同一事件历史。公开头文件可以用 Pimpl 隐藏不必要的第三方实现细节；库不暴露 ROS 类型。
+- **所有公开可失败操作统一返回 Result<T> 或 Result<void>**，其中成功时 status=Ok；非 void 成功必有 value，失败时没有 value 且必须提供非空 message。Result<void> 不具有 value。
+- Status 枚举名称及上述显式数值在 v1 ABI 主版本内稳定；新增错误码不可更改已有数值，破坏性变更必须升级主版本；内部异常被翻译为 InternalError（附诊断），已定义的非法输入用对应类型码。状态码用于程序分支，message 只供人阅读，不保证可解析文案稳定。
+- 仅不可恢复的内存分配异常 std::bad_alloc 允许越过库边界向同工具链 C++ 调用者传播；所有事件提交、生成和配置导入均满足**强异常保证**：成功前状态不变，异常也不能留下部分结果。
+- 全部只读接口无状态改变；未知的时间、相机、非法单位视线统一用 Result 错误或 RayHit.failure（整个调用失败与逐条无命中区分）。最外层的空门控 Generate 返回 status=Ok、空 frames。
+- Status 的对外语义详见 §8（重复/回退）、§7（无交点）、§3（事件时序）和 §9（配置）。
+
+### 2.2 线程安全与多实例
+
+同一个 Simulator 实例**不提供内部同步**。用户必须串行调用 Set*、Begin/End、LoadMotionConfig、Generate、ResetSamplingSession，也必须避免它们与 Get*/Raycast/GetChangeHistory 并发；在无写入的期间，多个只读查询可并行，但调用者仍须确保实例活着且未发生移动/销毁。不同 Simulator 实例之间不共享可变历史、计数器或噪声状态，可以并发运行。回调/日志不允许在内部持锁期间调用用户代码（当前 v1 不提供回调式接口）。
+
+### 2.3 数据所有权、生命周期与二进制兼容边界
+
+- Simulator 用 Pimpl（Impl 在 .cpp 定义）隐藏内部状态；公开值类型是**值语义**。GetChangeHistory、ListCameras、Raycast 和 Generate 返回独立 std::vector；返回体在 Simulator 销毁后仍有效。
+- 图像结果中的 cv::Mat 由每次生成单独分配，返回时转移/共享该帧独立的 OpenCV 引用计数缓冲；后续 Generate 不重用可写底层存储，调用者可安全持有或释放。若要完全独立复制可在调用方 clone；库不保存历史 cv::Mat。
+- Pimpl 只减少布局暴露，**不提供跨编译器、libstdc++ 或 OpenCV/Eigen 版本的稳定二进制 ABI**。初始 API/SONAME 主版本为 1；破坏公开类型/布局/异常 ABI 时须升级 SONAME 和 CMake package 主版本。目标只保证相同兼容 Linux ABI/工具链及依赖版本的消费者可运行。
+- 输出时间、名称、帧号等属于返回对象所有，不借用临时字符串指针；仅在 RayHit.hit=true 时读取 point_W_m、range_m 和 surface_name。
+
+### 2.4 时间域及参数合法性
+
+有效查询纳秒时间范围为 0 ≤ t ≤ INT64_MAX；事件时间必须非负且按非递减顺序追加，查询可读取任意有效历史时间，运动计算如出现非有限结果返回 TimeOutOfRange/InvalidArgument。时间戳与纳秒间隔内部保持 std::int64_t，浮点秒仅在解析求值计算边界使用，不能回算覆盖整数时间。坐标值必须有限，旋转矩阵满足 SO(3)（容差按测试计划确定），相机焦距和分辨率为正，噪声参数非负；非法配置整个操作失败。传感器 ID 稳定，不因 RenameCamera 更改。
 
 ## 3. 立即式命令和双类别栈
 
@@ -191,23 +218,20 @@ ScopeStack = stack of saved ActiveMotion
 ~~~cpp
 Simulator sim;
 sim.SetPose(0, p0, R0);
-sim.SetLinearMotion(0, LinearMotionSpec::ConstantVelocity(v_W));
+sim.SetLinearMotion(0, LinearConstantVelocity{v_W});
 
-sim.BeginMotionMode(1'000'000'000LL); // 1 秒入栈当前线/角模式
+sim.BeginMotionMode(1'000'000'000LL);
 sim.SetAngularMotion(1'000'000'000LL,
-                     AngularMotionSpec::ConstantRotation(axis_B, omega));
+                     AngularFixedAxisRotation{axis_B, omega});
 sim.SetLinearMotion(2'000'000'000LL,
-                    LinearMotionSpec::UniformCircular(r_W, n_W, rate));
-// 2~3 秒：圆周线运动 + 匀速转动角运动，线运动已覆盖原匀速直线
+                    LinearUniformCircular{radius_W, normal_W, rate});
 sim.EndMotionEnd(3'000'000'000LL);
-// 3 秒起恢复入栈前的匀速直线 + 角静止；
-// 当前位置/朝向连续，不跳回 1 秒时的位置/朝向。
 
 auto state = sim.GetMotionState(2'500'000'000LL);
 auto hits  = sim.Raycast(2'500'000'000LL, bearings_C, "cam0");
 ~~~
 
-这是设计示意，并非已有可编译代码。Begin/End 在相同时间允许零时长作用域，操作按稳定插入顺序执行。没有对应 Begin 的 End 返回 UnmatchedMotionScope；不自动生成临时作用域。
+这是按 v1 接口示意的调用片段，省略了每次 Result 的错误检查，**不是当前仓库已经能够编译的样例**。Begin/End 在相同时间允许零时长作用域，操作按稳定插入顺序执行。没有对应 Begin 的 End 返回 UnmatchedMotionScope；不自动生成临时作用域。
 
 ### 3.3 时间事件与历史保护
 
@@ -215,7 +239,7 @@ EventTimeline 的每条事件含 timestamp_ns:int64、单调递增的 insertion_
 
 默认只允许按**生效时间非递减**的顺序追加事件，同一时间戳可按调用顺序多次覆盖。已经成功生成任意传感器数据后，不接受在**任一已生成帧的时间戳及之前**新增/修改事件，避免历史重算改变旧输出；只读 GetMotionState/Raycast 可以查询历史时间，不会冻结配置也不会生成帧。
 
-需要更改过去的历史时：显式 ResetSamplingSession 后重新创建/导入期望事件序列（或新建仿真实例）。重置采样序号不自动删除事件历史；另提供明确的 ClearConfiguration/ReplaceEventTimeline 操作时必须把副作用写入 API 文档。
+需要重新定义已经生成过数据的历史时，必须**新建 Simulator 实例**并重新构造/导入历史。ResetSamplingSession 仅重置采样序号和上一次采样时间，**不清空、不解冻任何历史事件**。v1 不提供 ClearConfiguration/ReplaceEventTimeline；读取历史与 Raycast 不会冻结事件。
 
 ## 4. 基于事件的分段解析运动重算
 
@@ -226,7 +250,7 @@ EventTimeline 的每条事件含 timestamp_ns:int64、单调递增的 insertion_
 ~~~text
 Evaluate(t):
   validate t and event-time domain
-  initialize state from baseline, modes=(linear stationary, angular stationary)
+  initialize state at t=0: p=(0,0,0)m, R=I, modes=(linear stationary, angular stationary)
   scopeStack := empty local replay stack
   cursor_ns := start_ns
   for event_group in chronological events with time <= t:
@@ -244,6 +268,12 @@ Evaluate(t):
 ~~~
 
 循环中的 state 和 scopeStack 是**单次调用临时变量**，不是跨调用缓存。调用生成、IMU、交点、运动真值时复用相同的 Evaluate 语义。多个改变时间相同的事件先按顺序应用，再使用右侧模式做该时间之后的运动。切换边界 GetMotionState 返回右侧模式的速度/加速度，并在 derivative_discontinuous=true 时提示两侧导数不连续。
+
+### 4.1.1 初始条件、事件作用域和时间边界
+
+若调用者没有 SetPose(0)，仿真初始运动状态 p_WB=(0,0,0) m、R_WB=I、v=a=ω=α=0；若有时间为 0 的 SetPose 事件，按照同刻 insertion_order 生效。默认 Room 尺寸 depth=10 m、width=10 m、height=3 m；当配置文件提供显式初始值时以该初始值作为同一时刻的起点。
+
+时间域是 [0, INT64_MAX] 纳秒；在无有效运动导数、非有限输出或无效外参条件下必须报告错误。事件组发生在时刻 t_i：先以旧模式解析 [t_{i-1},t_i) 到事件左极限，再按 insertion_order 应用所有 t_i 事件，最后令 t_i 的查询取**右侧状态**。无事件时刻无需采样即可直接查询。采用相对时间差纳秒转换为秒，避免大绝对时间导致的秒数差分抵消。
 
 ### 4.2 基本运动解析式
 
@@ -292,18 +322,31 @@ $$
 
 不同时间段的旋转必须**按时间先后在当前段首姿态上右乘**，不能把不同时刻不共轴的旋转向量简单相加。线/角类别可跨类叠加，世界系平移规律独立于角模式。非零角加速度**不在本次规定的角模式集合内**；对 SetAngularAcceleration(nonzero) 之类的矛盾设置明确报 UnsupportedAngularAcceleration，而不伪造解析结果。
 
+### 4.3 参数切换、出栈与显式跳变
+
+1. 每次 SetLinearMotion、SetAngularMotion、EndMotionEnd 都先解析旧运动到当前事件时间，再以当前 p/R 作为新段锚点；类内覆盖另一个类别不受影响。
+2. BeginMotionMode 保存的是线、角两类模式参数快照，不保存待恢复的旧位姿。EndMotionEnd 只恢复模式规范，并从事件时刻**重新锚定**，不得跳回 Begin 时的位置/朝向。
+3. UniformCircular 使用相对初始有向半径 radius_W_m、轨道法向和角速率；退出作用域重新启用旧圆周规范时，使用退出时当前 p 和保存的 radius_W_m 确定新的圆心 c=p−radius_W_m。如果用户请求固定旧世界圆心且违反连续性，则按 InvalidMode 拒绝而非隐式重定位。
+4. SetPose(t,p,R) 是**唯一允许主动造成 p/R 不连续的业务事件**：它显式替换事件时刻的绝对姿态及位置，同时按当前有效模式重新锚定局部起点；恒加速模式的 initial_velocity_W_mps 重新作为新段初速度，圆周模式沿当前 radius_W_m 重建圆心。若调用者希望保持原速度，应在同一 t 的后续事件显式写入对应参数。
+5. 查询恰好处于模式/SetPose 事件时间 t 时，返回在所有 t 事件执行**之后**的右侧位姿与相应模式解析导数；如左右导数不同或 SetPose 造成跳变，设置 derivative_discontinuous=true。段内支持的两个角模式角加速度恒为 0；不虚构切换冲量的有限角加速度。
+6. 同一时刻多事件按提交顺序依次执行，若产生矛盾配置（例如零长度圆周半径、非正房间尺寸、非法 SO(3)）整个操作拒绝，原事件历史不变。
+
 ## 5. 动态相机及标定时间线
 
-### 5.1 注册与名称
+### 5.1 注册、默认相机与重命名规则
 
-CameraRegistry 使用稳定不可变 sensor_id（例如 uint64）作为真正身份，name 是可在时间线上变化的别名。自动编号 next_auto_camera_index 初始为 0：
+CameraRegistry 的 SensorId 稳定且不会重用，名称按时刻解析。自动名称固定依次 cam0、cam1、cam2……，更名不回收自动序号，也不更改此前帧的 id/编号。
 
-- 还没有任何显式注册及已使用默认相机时，第一次 CreateCamera(T_BC,t) 得到 cam0。
-- 若无 CreateCamera，第一次枚举相机/生成图像/使用默认 cam0 时自动保证有一台 T_BC=(I3,0) 的 cam0；其默认创建语义可视为初始配置，不产生额外 phantom cam1。
-- 如果已使用默认 cam0，再 CreateCamera 得到 cam1；之后依次递增，改名不回收旧自动编号。
-- RenameCamera(t,id,new_name) 必须确认该时间下名称唯一；历史查询使用当时的名称；帧号及时间约束始终绑定不可变 sensor_id。
+**默认与显式创建的定稿规则（避免查询引起隐式状态突变）：**
 
-每次创建、重命名、修改标定均记入时间线；查询 t 仅使用 t 以前生效的相机定义。新相机在创建前的时间不能被用来生成图像或求交。
+- 起点 t=0 的初始配置视作有一台**虚拟默认** cam0（T_BC=(I3,0)），无需真正修改事件历史；只读 Raycast/ListCameras 不会“创建”对象。
+- 如果第一条 CreateCamera 事件的生效时间恰为 0，且此前没有任何成功生成帧，则第一台显式相机**替代虚拟默认值、占用稳定 ID=0 和名称 cam0**，而非增加 cam1；这是仿真初始化阶段的注册。
+- 如果第一条 CreateCamera 的生效时间大于 0，则此前的虚拟默认 cam0 从 t=0 起存在，新相机自该事件时刻成为 cam1。这样过去历史与无副作用查询有确定结果。
+- 若已在 t=0 成功生成默认 cam0 的帧，则 t=0 的后续 CreateCamera 被 EventHistoryFrozen 拒绝，不能将已输出传感器身份替换。
+- 后续每次注册用下一个自动 ID/名称；若自动名称与调用者先前 RenameCamera 形成占用冲突，必须明确返回 DuplicateCameraName，不能覆盖或重用其他相机身份。
+- RenameCamera(t,id,new_name) 禁止空名称、与该时刻其他相机同名；修改只影响 t 以后，旧历史使用旧名。后续生成使用新名，但同一 SensorId 的时间去重和 frame_number 保持连续。
+
+事件历史包括所有显式 CreateCamera、RenameCamera 和标定变更。GetCameraCalibration(t,id)、ListCameras(t)、Raycast(t,name) 查询只采纳 t 时有效的定义，不依赖此前 Generate 是否调用。
 
 ### 5.2 外参与相机成像
 
@@ -344,16 +387,26 @@ $$
 
 输出 ω_S 为 rad/s，f_S 为 m/s²；必须包含非零杆臂在旋转下的向心项，角加速度由当前运动模式提供（本版各常速角段内为 0）。切换点角速度跳变意味着理想冲量未定义；返回右侧非冲量状态，标记边界，不虚构无限角加速度峰值。
 
-### 6.2 可复现噪声，不保存历史传感器数据
+### 6.2 噪声单位、离散化、无缓存按需重算
 
-默认 noise_enabled=false，返回无噪值。开启后白噪声、零偏随机游走参数必须数值生效。为遵守禁止缓存 IMU 样本/历史偏置的要求，采用**以随机种子、时间参数和噪声事件版本确定的可按需重算随机过程**：
+每个 IMU 标定字段采用明确单位：gyroscope_noise_density 为 rad/s/√Hz，gyroscope_random_walk 为 rad/s²/√Hz；accelerometer_noise_density 为 m/s²/√Hz，accelerometer_random_walk 为 m/s³/√Hz。等效连续时间标准差约定为白噪声密度 N、零偏布朗运动强度 K，不将已保存 YAML 值视为无需数值生效的注释。
 
-- 对每个 IMU 时间请求，白噪声由 seed、sensor_id、该时刻的纳秒时间/采样序号等确定性输入产生，方差按连续噪声密度和采样间隔离散化。
-- 随机游走偏置定义为基于 seed、噪声配置生效时刻及固定时间网格的时间函数；使用确定性随机增量构造偏置，历史/未来时刻都能按需重算相同值，**不保留前一帧 IMU 样本或偏置轨迹缓存**。
-- 初始采样间隔用标称 1/rate_hz；其后白噪声离散间隔可用 imu0 最近成功输出时间求得（该时间是防重协议变量，而非帧缓存）；固定时间网格随机游走模型须与该抽样规则在数学上注明。
-- 固定种子、相同修改历史、时间请求顺序 → 可复现。不同参数生效版本不得悄悄沿用旧随机过程。
+关闭 noise_enabled 时，不添加随机白噪与随机游走（默认 initial_*_bias_S=0）。开启后，每轴：
 
-对按步长 Δt 积分的离散白噪和偏置增量，可采用常见密度关系 σ_white=N/√Δt、σ_walk=K√Δt；具体谱密度单位/约定在实际 API 文档和数值验证中固定。随机过程时间函数可由前缀增量求值或无缓存的分层确定性生成实现，**但不得以长期保存各次偏置/测量结果充当缓存**。当长序列无缓存重算的性能不满足目标时，只能优化算法，不得在没有用户授权情况下重新引入帧或位姿缓存。
+$$
+y_{\omega,k}=\omega_{S,k}+b_g(t_k)+n_{g,k},\qquad
+y_{f,k}=f_{S,k}+b_a(t_k)+n_{a,k}.
+$$
+
+白噪声标准差为 N/√Δt，其中首个成功 IMU 帧的 Δt=1/nominal_rate_hz，后续 Δt=(本次 timestamp_ns−imu0 最后成功 timestamp_ns)×10⁻⁹ 秒。有效 Δt 必须严格正，且有限。每轴 n=N·Z/√Δt，Z 为标准正态，随机键由 seed、配置事件 insertion_order、sensor ID、该采样时间与轴决定；同种子、同一采样序列在同一工具链下可复现。
+
+**偏置随机游走不用历史样本/偏置缓存**：定义连续时间 b(t)=b_initial+K·W(t−t_epoch)，其中 t_epoch 为最近一次 IMU 标定/噪声设置事件的生效时刻，W 是按纳秒整数时间可寻址的零均值布朗运动，Cov(W(s),W(t))=min(s,t)（秒）。每次显式 SetImuCalibration 定义新的 t_epoch、seed 和 b_initial，形成新的随机过程 epoch；不隐式继承旧 epoch 已积累的偏置。
+
+给出确定性且**不保存跨查询中间状态**的实现方案：对 0..2^63 ns 的时间域使用固定二叉 dyadic Brownian-bridge 树。根区间总增量为 sqrt(T_s)·Z(root)；每个区间长度 L_s 已知父区间总增量 Δ，则左半区增量由 Δ/2+sqrt(L_s/4)·Z(node) 给出，右半区增量为 Δ−左半区增量；Z 由固定 counter-based 64-bit hash（SplitMix64 与 Box–Muller，按以下固定规则定义）按 seed、epoch、轴和节点索引确定。沿根至目标纳秒时刻的路径求和，最多 63 层，得到可重现 W(t)；无需缓存任何 IMU 样本或偏置状态。布朗桥保证时间一致的增量协方差。生成时仅保留局部运算中间量。
+
+v1 的伪随机位流固定使用 SplitMix64 置换：先对 64 位无符号键加 0x9E3779B97F4A7C15，依次令 x=(x xor (x>>30))*0xBF58476D1CE4E5B9、x=(x xor (x>>27))*0x94D049BB133111EB、x=x xor (x>>31)，全部按 64 位模 2^64 运算。键的混合顺序固定为：令 key=seed，依次对固定域标签（白噪声=1、布朗桥根=2、布朗桥内部结点=3）、配置事件 insertion_order、sensor_id、轴号(0..5)、采样时刻或结点起点的整数纳秒、结点层级、独立高斯分量编号，执行 key=SplitMix64(key xor SplitMix64(该字段的 uint64_t 位模式))。白噪声使用请求时刻；布朗桥使用结点起点和层级；不同域和轴具有不同键空间。分别以高斯分量编号 0、1 构造两个置换输出，高 53 位整数 m 映射为 u=(m+0.5)·2^(-53)，产生开区间 (0,1) 的 U1/U2，采用 Box–Muller Z=√(−2 ln U1) cos(2πU2)。这一定义固定了 v1 的随机过程家族与索引规则；受标准数学库浮点实现差异影响，**仅承诺同工具链/同构建的逐值可复现**，不承诺跨 libc/架构 bitwise 相同。
+
+噪声统计验收：对固定间隔、独立种子的样本，白噪样本方差与 N²/Δt、随机游走差分方差与 K²Δt 对照；使用预设 99% 卡方方差置信区间判定，并另测固定 seed 的逐元素完全重放。此检验必须在独立实验样本上进行，不允许以单个随机点的输出大小推断方差达标。性能预算与跨标准库 bitwise 一致性不在本版承诺内。
 
 ## 7. Room 真实求交与可见性
 
@@ -369,11 +422,11 @@ $$
 d_W=R_{WC}u_C,\qquad P_W(\lambda)=c_W+\lambda d_W,\quad\lambda>0.
 $$
 
-对每个候选面，在射线方向该轴非零时求 λ=(plane−c_axis)/d_axis；过滤非正 λ、平行、有限面二维边界之外的点，使用最小有效 λ 作为真实首次命中；棱边/角点相等交点采用固定面优先级，以保证可复现。
+对每个候选面，在射线方向该轴非零时求 λ=(plane−c_axis)/d_axis；过滤非正 λ、平行、有限面二维边界之外的点，使用最小有效 λ 作为真实首次命中。建议固定容差：方向平行阈值 1e−12，正向距离阈值 max(1e−9 m, Room 对角线长度×1e−12)，有限边界容差 Room 对角线长度×1e−12。棱边/角点等距命中按稳定面名先后 (x0,xDepth,y0,yWidth,z0,zHeight) 决定 surface_name，世界坐标仍是同一个几何点。
 
-须验证视线有限、长度在单位容差内、位于相机正向有效成像视域、实际畸变后像素在图像范围。Room 渲染的遮挡规则必须和此求交的最近表面选择一致。返回列表与输入 vector 索引一一对应：每个结果有命中与否、世界坐标、射线距离、面标识及失败原因；不得把离散绘制网格顶点误当成唯一真实交点。
+须验证视线三个分量有限且 |‖u_C‖−1|≤1e−9；超过容差的非单位向量**报错而不是悄悄归一化**。u_C 的 z 分量须为正。将 u_C 投影为归一化坐标 (u_x/u_z,u_y/u_z)，使用**当时相机的完整内参和径向切向畸变**投影到 (px,py)，只在 0≤px<width、0≤py<height 时视为有效成像视域。有效视域以畸变后像素为准，而非未畸变针孔投影。Room 渲染的遮挡规则必须和此求交的最近表面选择一致。返回列表与输入 vector 索引一一对应：每个结果有命中与否、世界坐标、射线距离、面标识及失败原因；不得把离散绘制网格顶点误当成唯一真实交点。
 
-**Raycast 不查任何 PoseCache，也不要求 t 被 Generate 用过**；可以反复读过去 t，不能影响当前运动/配置历史和任何传感器序号。
+**Raycast 不依赖任何跨调用位姿缓存，也不要求 t 被 Generate 用过**；可以反复读过去 t，不能影响当前运动/配置历史和任何传感器序号。
 
 ## 8. 采样门控、时间严格递增与帧编号
 
@@ -405,37 +458,86 @@ Generate(2ms, camera=true,imu=false)   -> OutOfOrderTimestamp
 
 ## 9. 配置文件、导出和 Linux 安装
 
-### 9.1 配置文件格式提案
+### 9.1 正式 YAML schema v1（设计冻结）
 
-推荐 YAML（yaml-cpp 可选），其含义与逐条 C++ 调用一致。例如：
+v1 顶层字段固定为 schema_version、baseline、events、可选 sampling。基线在仿真时间 0 生效；events 数组中的每条**状态修改事件**都需要 timestamp_ns、op、value（Begin/End 除外，不得填 value）。配置与函数式事件的语义必须一致。
+
+以下 YAML 为**符合当前 v1 合同的完整样例**：
 
 ~~~yaml
-simulation:
-  room: {depth_m: 10.0, width_m: 10.0, height_m: 3.0}
-  initial_pose:
-    timestamp_ns: 0
+schema_version: 1
+baseline:
+  room:
+    depth_m: 10.0
+    width_m: 10.0
+    height_m: 3.0
+  pose:
     position_W_m: [5.0, 5.0, 1.5]
-    rotation_WB_quaternion_wxyz: [1, 0, 0, 0]
-  events:
-    - {timestamp_ns: 0, op: SetLinearMotion, mode: ConstantVelocity,
-       velocity_W_mps: [0.25, 0, 0]}
-    - {timestamp_ns: 1000000000, op: BeginMotionMode}
-    - {timestamp_ns: 1000000000, op: SetAngularMotion,
-       mode: FixedAxisConstantRotation, axis_B: [0, 0, 1],
-       angular_rate_radps: 0.35}
-    - {timestamp_ns: 2000000000, op: EndMotionEnd}
-  cameras:
-    - {timestamp_ns: 0, op: CreateCamera, name: cam0, T_BC: identity}
+    quaternion_WB_wxyz: [1.0, 0.0, 0.0, 0.0]
   imu:
+    T_BS:
+      quaternion_BS_wxyz: [1.0, 0.0, 0.0, 0.0]
+      translation_B_m: [0.0, 0.0, 0.0]
+    nominal_rate_hz: 200.0
+    gyroscope_noise_density: 0.001
+    gyroscope_random_walk: 0.0001
+    accelerometer_noise_density: 0.01
+    accelerometer_random_walk: 0.001
+    initial_gyro_bias_S: [0.0, 0.0, 0.0]
+    initial_accel_bias_S: [0.0, 0.0, 0.0]
     noise_enabled: false
-  sampling:
-    camera_times_ns: [0, 50000000, 100000000]
-    imu_times_ns: [0, 5000000, 10000000]
+    seed: 1234
+events:
+  - timestamp_ns: 0
+    op: SetLinearMotion
+    value:
+      mode: ConstantVelocity
+      velocity_W_mps: [0.25, 0.0, 0.0]
+  - timestamp_ns: 0
+    op: CreateCamera
+    value:
+      T_BC:
+        quaternion_BC_wxyz: [1.0, 0.0, 0.0, 0.0]
+        translation_B_m: [0.0, 0.0, 0.0]
+  - timestamp_ns: 1000000000
+    op: BeginMotionMode
+  - timestamp_ns: 1000000000
+    op: SetAngularMotion
+    value:
+      mode: FixedAxisConstantRotation
+      axis_B: [0.0, 0.0, 1.0]
+      rate_radps: 0.35
+  - timestamp_ns: 2000000000
+    op: EndMotionEnd
+sampling:
+  camera_times_ns: [0, 50000000, 100000000]
+  imu_times_ns: [0, 5000000, 10000000]
 ~~~
 
-此示例只是结构草案；正式 schema 应在实现时固定字段和错误反馈。配置文件读取、事件解析及排序必须遵守 SRS 的时间/作用域/相机创建规则，并对事件合法性采取“全部验证后提交”策略，不能装载一半失败。
+v1 操作与 value 字段约束：
 
-CLI 的运动示例（前向平移、纯旋转及组合）应该作为配置文件或对外函数调用示例，而不是写死在 main.cpp 里。**唯一场景永远是 Room**，不接受 ForwardDepthScene 名称。导出需用户显式指定路径及是否覆盖，禁止自动 remove_all 任意目录。
+| op | value 的必需字段 | 行为 |
+| --- | --- | --- |
+| BeginMotionMode / EndMotionEnd | 不得出现 value | 入栈 / 出栈 |
+| SetPose | position_W_m[3]、quaternion_WB_wxyz[4] | 显式重设绝对位姿 |
+| SetLinearMotion | mode + 模式字段 | Stationary 无附加值；ConstantVelocity: velocity_W_mps[3]；ConstantAcceleration: initial_velocity_W_mps[3]、acceleration_W_mps2[3]；UniformCircular: radius_W_m[3]、normal_W[3]、rate_radps |
+| SetAngularMotion | mode + 模式字段 | Stationary 无附加值；FixedAxisConstantRotation: axis_B[3]、rate_radps |
+| CreateCamera | T_BC（quaternion_BC_wxyz[4]、translation_B_m[3]） | 自动命名为 camX |
+| RenameCamera | camera_id、new_name | 改相机显示名，sensor id 不变 |
+| SetCameraCalibration | camera_id、T_BC、K_row_major[9]、width、height、radtan[4]、nominal_rate_hz | 完整替换指定相机标定 |
+| SetImuCalibration | 同 baseline.imu 结构与全部字段 | 完整替换 IMU 标定及噪声 epoch |
+| SetRoom | depth_m、width_m、height_m | 改 Room 参数，历史时刻按对应版本重算 |
+
+若不含显式 CreateCamera，自动使用默认 cam0，T_BC=(I3,0)；若在 t=0 使用 CreateCamera，首台显式相机占 cam0 身份，详见 §5.1。baseline 允许省略 pose/room/imu 的整项，此时分别采用零位姿、Room (10m,10m,3m)、IMU 单位外参与无噪默认参数（标称频率 200Hz，其余噪声和初始偏置为 0，seed=0）。baseline 内一旦出现某项对象，则该对象的所有规定字段必填，避免半更新含义不明确。
+
+**验证与事务规则：**
+
+1. schema_version 必须是整数 1，其他版本报 InvalidConfigSchema；未知顶层键、未知 op、重复 YAML map key、非法数量、非有限数、非单位旋转/法向、同一时间的名称冲突均拒绝。
+2. timestamp_ns、sampling 中的 *_times_ns 必须是 YAML 十进制**整数**，在 std::int64_t 非负范围，禁止浮点数、科学计数法、溢出或字符串冒充纳秒。events 按文档顺序，时间戳须非递减；相同时刻以数组顺序确定 insertion_order。
+3. quaternion 顺序固定 **w,x,y,z**；位置/平移 [x,y,z]，K_row_major 是 3×3 按行展开的 9 个数，radtan 为 [k1,k2,p1,p2]。imuread 读取的 noise density 单位由 §6.2 固定。
+4. LoadMotionConfig(path) 仅允许用于**尚无显式业务事件且尚未输出帧**的新实例；整个文档先解析、验证、重建局部状态，成功才整体提交，任一错误则原对象完全不变。错误 message 包含可读 YAML 路径（如 events[3].value.axis_B），调用者以 Status 判断错误类别。
+5. sampling 是**CLI 导出请求计划**，不是运动/标定修改事件；库的 LoadMotionConfig 只验证其结构并不隐式生成数据或写文件。CLI 将两个 *_times_ns 合并、升序调度，每时刻为对应门控合并一次 Generate。不同传感器可同时间采样，单一传感器时间序列必须严格递增。
+6. 读取和写出的配置应保留事件顺序、标定数值及版本标记；库内事件历史 ChangeRecord 的 canonical_payload_yaml 可使用这里定义的 value 同构序列化，不得把计算出的图像或位姿追加进历史。
 
 ### 9.2 CMake / 安装行为
 
@@ -443,20 +545,8 @@ CLI 的运动示例（前向平移、纯旋转及组合）应该作为配置文�
 
 **不需要也不允许以“Ubuntu 24.04 默认工具链太老”为理由强制降低 CMake、GCC 或 C++ 标准要求**。维持用户现有可用的构建链，并在文档中列明实际选用版本。纳秒时间字段进行 std::is_same_v<TimestampNs,std::int64_t> 等编译期检查。
 
-## 10. 建议验证用例（实施阶段再执行）
+## 10. 验证责任与追踪
 
-| ID | 验证 | 对应需求 |
-| --- | --- | --- |
-| V01 | Ubuntu 安装 .so、无 ROS 独立消费端；Windows 配置失败；无工具链降级 | AC-01 |
-| V02 | C++ 调用与 YAML 事件序列等价；顺序相同且同刻覆盖稳定 | AC-02 |
-| V03 | 同类模式覆盖、跨类组合、嵌套 Begin/End 恢复，退出没有 p/R 瞬移 | AC-03 |
-| V04 | 静止、恒速、恒加速、圆周与多段组合的 p/R/v/a/ω/α 和解析导数一致 | AC-04 |
-| V05 | 默认 cam0 外参为 (I3,0)；先显式创建得到 cam0，后续 cam1/cam2；重命名后不重复、不重置帧号 | AC-05 |
-| V06 | 相机 K/T_BC/非零畸变影响图像；IMU T_BS 杆臂影响比力；启用/禁用噪声和随机种子有效 | AC-06 |
-| V07 | 所有相机的门控、同刻 imu 的独立调用、每传感器重复/回退拒绝，整批失败无副作用 | AC-07 |
-| V08 | 在**没有生成图像**的过去/未来时间，Raycast 仍能返回 Room 六面最近真实交点；无效视线状态正确 | AC-08 |
-| V09 | 事件改动被记录/可重算历史；扫描内存状态和类型确保没有 64 帧位姿、图像、IMU 结果缓存 | AC-09 |
-| V10 | 所有 ns 字段严格 std::int64_t；配置驱动数据集包含原有平移/旋转能力，场景只有 Room | AC-10 |
-| V11 | 发生错误后可用新合法时间生成数据，编号、噪声过程和事件历史未被污染 | AC-07/09 |
+本 LLD 只固定实现合同和算法边界，**不在此维护完整测试用例表**。V01–V13 的完整测试定义、FR/NFR/AC→LLD/V/P 对应矩阵、验收命令、阶段状态与风险见 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)。
 
-**本轮仅写设计文档，不编译、不改生产代码、不运行测试。** 代码分批实施和来源仓库只读保护见 IMPLEMENTATION_PLAN.md。
+设计验收不等于代码已实现或运行成功。当前所有接口、噪声算法和 YAML 版本均为**设计合同**；本轮未修改生产代码、未构建或运行测试。
