@@ -207,12 +207,12 @@ flowchart LR
     Shared --> Eigen["Eigen3"]
     Shared --> OpenCV["OpenCV"]
     Shared -. "若使用 SO(3)/SE(3) 辅助运算" .-> Sophus["Sophus（可选）"]
-    Loader["LoadMotionConfig / 配置解析器"] -. "仅 YAML 解析" .-> YAML["yaml-cpp"]
-    Loader --> Shared
+    Shared -. "LoadMotionConfig 使用配置解析时" .-> YAML["yaml-cpp（配置解析依赖）"]
     CLI["可选 CLI / DatasetExporter"] --> Shared
+    CLI -. "若 CLI 直接解析配置" .-> YAML
 ~~~
 
-所有实体均来自**目标仓库的 Linux 安装产物或非 ROS 依赖**。消费者在安装前缀外使用 find_package 和 VisualSim::VisualSim，运行时由 Linux 动态装载器解析 .so；部署不依赖 ROS 工作空间。图中的 Sophus 是按需选用的几何运算依赖；**yaml-cpp 专用于 LoadMotionConfig/配置文件解析路径（也可能被 CLI 使用）**：如果解析实现位于 .so 内，就作为 .so 的实际链接依赖，否则仅为配置解析组件/CLI 的依赖，不能误写成核心几何计算的必需依赖。未使用的库不得凭示意图引入；构建标准和实际库版本在首次实际构建时记录，禁止强制降低用户已有工具链版本。
+所有实体均来自**目标仓库的 Linux 安装产物或非 ROS 依赖**。消费者在安装前缀外使用 find_package 和 VisualSim::VisualSim，运行时由 Linux 动态装载器解析 .so；部署不依赖 ROS 工作空间。图中的 Sophus 是按需选用的几何运算依赖；**LoadMotionConfig 是 Simulator 对外提供的配置加载能力，不是需要单独安装或部署的 Loader 运行库**。**yaml-cpp 专用于 LoadMotionConfig/配置文件解析路径（也可能被 CLI 使用）**：如果解析实现位于 .so 内，就作为 .so 的实际链接依赖，否则仅为配置解析组件/CLI 的依赖，不能误写成核心几何计算的必需依赖。未使用的库不得凭示意图引入；构建标准和实际库版本在首次实际构建时记录，禁止强制降低用户已有工具链版本。
 
 可选 CLI/Exporter 从配置文件中读时间戳运动和标定事件，再使用同一库 API 采样/写盘；原有前向匀速/纯旋转作为配置示例保留**运动能力**，但两种运动均在 Room 场景上运行。不得在 main.cpp 中重新写死运动轨迹，也不得无提示递归删除输出目录。
 

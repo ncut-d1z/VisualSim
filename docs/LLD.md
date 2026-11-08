@@ -198,7 +198,7 @@ private:
 - v1 的 Status 枚举名称和显式数值保持稳定；message 是人工诊断，不是可解析协议。可预期的非法参数、时间、相机和配置使用已有对应状态码，而不是笼统 InternalError。
 - **第三方异常翻译**：yaml-cpp 的解析/重复键/字段类型错误、配置读取中的文件系统/IO 错误映射为 InvalidConfigSchema（message 记录 YAML 路径/字段）；OpenCV 的 cv::Exception、未分类 yaml-cpp 异常、其他可捕获的第三方或 std::exception 统一翻译为 InternalError（保留诊断）；可捕获的未知异常同样翻译为 InternalError。上述异常均不能穿过公开接口。
 - **仅 std::bad_alloc 可穿越 C++ 公开边界**，前提是同一兼容工具链；它也不得留下半提交。Setter、Begin/End、Create/Rename、LoadMotionConfig、Generate 和 ResetSamplingSession 的失败或可捕获异常均具**强状态保证**：任何错误都不得改变已提交事件、相机 ID/编号、配置、协议时间和帧号。事件导入不能只提交部分事件。
-- **事务的提交点与返回安全（v1 冻结）**：先在单次调用局部空间完成所有可能抛异常的验证、历史事件/相机注册结构扩容、图像 cv::Mat 分配、IMU 计算、完整 Result/SampleBatch 及错误消息构造；之后以不抛异常的状态交换/已预分配字段赋值提交事件与最小协议计数器。对返回对象，必须使提交后的返回路径为 noexcept move 或可证明不会分配的返回构造；若具体类型无法保证，需在提交前返回对象准备阶段完成必要分配，或采用可回滚事务，**不能先递增帧号再因构造/返回 Result 失败而破坏强保证**。相关 noexcept 约束应在实现时以类型特性和故障注入验证，不以当前文档宣布编译已通过。
+- **事务的提交点与返回安全（v1 冻结）**：先在单次调用局部空间完成所有可能抛异常的验证、历史事件/相机注册结构扩容、图像 cv::Mat 分配、IMU 计算、完整 Result/SampleBatch 及错误消息构造；之后以不抛异常的状态交换/已预分配字段赋值提交事件与最小协议计数器。对返回对象，必须使提交后的返回路径为 noexcept move 或可证明不会分配的返回构造；若具体类型无法保证，需在提交前返回对象准备阶段完成必要分配，或采用可回滚事务，**不能先递增帧号再因构造/返回 Result 失败而破坏强保证**。**异常翻译与正常/错误返回对象的必要构造均须在提交点前完成**；提交之后不能再因异常翻译、诊断消息分配或 Result 返回构造失败而留下部分提交。相关 noexcept 约束应在实现时以类型特性和故障注入验证，不以当前文档宣布编译已通过。
 - Eigen 不保证以异常报告违反前置条件的断言，调用前须验证维度、有限值、SO(3)、向量合法性；不可恢复的进程中止不属于异常返回协议。只读 Get*/Raycast 不改变状态；Raycast 全局错误和逐条失败按 §7 区分。
 
 ### 2.2 线程安全与多实例
@@ -513,7 +513,7 @@ $$
 
 ## 8. 采样门控、时间严格递增与帧编号
 
-**首次生成与 Reset 的固定初始状态**：每个 SensorIdentity 的 last_successful_ns 使用 std::optional<TimestampNs>，**初始为 std::nullopt（尚未生成）**，next_frame_number 初始为 0；没有上一成功时间时**跳过重复/回退比较**，首次任意有效 at_ns（包括 0 ns）均可成功生成第 0 帧。新创建的相机同样从上述未生成状态开始；ResetSamplingSession 对已注册的所有传感器恢复 last_successful_ns=std::nullopt、next_frame_number=0，不删除运动/标定事件历史，也不把 0 ns 当成已生成时间。
+**首次生成与 Reset 的固定初始状态**：每个 SensorIdentity 的 last_successful_ns 使用 std::optional<TimestampNs>，**初始为 std::nullopt（尚未生成）**，next_frame_number 初始为 0；没有上一成功时间时**跳过重复/回退比较**，首次任意有效 at_ns（包括 0 ns）均可成功生成第 0 帧。新创建的相机同样从上述未生成状态开始；ResetSamplingSession 对已注册的所有传感器（**包括此前已使用/实化的虚拟默认 cam0，SensorId=0**）恢复 last_successful_ns=std::nullopt、next_frame_number=0，不删除运动/标定事件历史，也不把 0 ns 当成已生成时间；尚未使用的虚拟默认 cam0 仍维持其默认未生成状态。
 
 每次 Generate(at_ns, gate) 执行以下事务：
 
