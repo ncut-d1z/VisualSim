@@ -130,3 +130,26 @@
 5. “完全冻结、可无歧义实施”只有在所有当前约定项都确定、四文档状态一致、跨文档复扫后才能认定。性能 NFR-02 依原决定继续**延期至首次有效运行后**，不伪造指标或通过记录。
 6. 每条“已整改”必须具备具体文档位置和本次提交；最终审计结果须分别统计旧轮 28/28 与新轮 20 项，并列出未整改/待决事项。**仅文档整改，不代表 .so 已实现/编译/测试通过。**
 7. 文件范围：SRS、HLD、LLD、IMPLEMENTATION_PLAN；辅助审计档 AUDIT/AUDIT_PROGRESS。只修改 `ncut-d1z/VisualSim/docs/`，来源 `ros2-vio-node` 只读。
+
+## 9. 第三轮持续审计规范（2026-11-08）
+
+本轮是旧轮 28 项及第二轮 20 项全部结案后的**独立持续审计**。不预设缺陷，以下 12 项均为**候选核验目标**；必须在正式读取最新正文后记录证据，确认现状满足时以“无需修改”闭环，存在缺口时才进行必要整改。不得把上一轮“100%”自动带入本轮。
+
+**顺序**：先登记并提交本节与进度表（全部未审计、未整改/待核验）→阅读四份最新正文与跨文档引用→记录问题和未发现问题→只修改确有问题的 docs→逐项复核→提交结案进度。状态和证据规则沿用 §3，最终需分别报告审计覆盖与整改闭环，性能验收仍依据 PERF-01 延期。
+
+| 本轮 ID | 仓库相对文件路径 | 风险级别 | 审计目标（未核验，不等于已确认缺陷） |
+| --- | --- | --- | --- |
+| R3-CAM-01 | `docs/SRS.md`、`docs/LLD.md`、`docs/HLD.md` | 高 | 核查仅输入 T_BC 创建相机或使用默认 cam0 时的默认 K、分辨率、畸变、采样率及图像像素类型是否完全定义；要求生成和标定 getter 使用同一默认。 |
+| R3-CAM-02 | `docs/SRS.md`、`docs/LLD.md` | 高 | 核查 t=0 默认 cam0 在已有标定/改名等显式操作后，首次 CreateCamera 应分配哪个 ID、名称，避免覆盖此前修改历史。 |
+| R3-IMU-01 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md` | 中 | 核查重力 g_W 在 HLD/LLD 说法与公开接口/YAML 是否一致：固定基线或完整支持可配置时间线必须明确。 |
+| R3-IMU-02 | `docs/LLD.md` | 中 | 检查 dyadic Brownian-bridge 根时间区间、epoch 相对纳秒和最末端 INT64_MAX 的边界可表示性，以及位流索引溢出/单位。 |
+| R3-IMU-03 | `docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 中 | 审查 V06-S 随机种子、样本独立性、理论方差和冻结的 99% 卡方阈值正确性及验收可执行性。 |
+| R3-EVT-01 | `docs/SRS.md`、`docs/LLD.md`、`docs/HLD.md` | 中 | 检查在已经生成传感器帧以后、按时间追加新事件的冻结边界，和历史任意时刻只读查询及 ResetSamplingSession 是否相容。 |
+| R3-MOT-01 | `docs/SRS.md`、`docs/LLD.md` | 中 | 检查 BeginMotionMode/EndMotionEnd 恢复、显式圆心/相位与普通切换的连续性/失败回滚，及示例能否按当前轨迹前提成立。 |
+| R3-RAY-01 | `docs/SRS.md`、`docs/LLD.md` | 中 | 核查 Raycast 在空 std::vector、非法时间/相机、逐条失败以及无命中时的结果长度与错误码约定。 |
+| R3-YAML-01 | `docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 中 | 核查 baseline、events、显式相机创建、默认相机和默认标定的完整等价规则，保证 YAML 示例不依赖未定义参数。 |
+| R3-API-01 | `docs/LLD.md`、`docs/HLD.md` | 中 | 核查公开 Simulator API、Pimpl 值语义、异常与所有权合同在默认构造、Reset 和多实例使用时是否完整。 |
+| R3-PLAN-01 | `docs/IMPLEMENTATION_PLAN.md` | 中 | 核查 V01–V13/V06-D/V06-S 是否覆盖默认相机/时序/重力/数值边界等新增或已批准验收，追踪主表是否闭环。 |
+| R3-X-01 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 中 | 复扫全部文档的命名、时间类型、Room-only、0..N 相机、无结果缓存、ROS/Windows 禁止、性能延期和 v1 状态；记录非必要改动和已符合项目。 |
+
+**不可侵犯边界**：仅写 ncut-d1z/VisualSim/docs/；ncut-d1z/ros2-vio-node 只读；不得修改生产代码或运行仿真；Linux Ubuntu 24.04、无 ROS、Windows 禁止、Room 唯一场景、即时式双类别运动、不可缓存历史结果、每传感器纳秒时间严格递增、性能验收延期等约束维持不变。冻结设计中的改动要标明兼容性/版本影响，不以“已冻结”为由拒绝纠正已发现的矛盾。
