@@ -646,7 +646,7 @@ reactivation_policy: ReanchorOnReactivation
 
 最终在目标仓库创建 SHARED 库并安装到 CMAKE_INSTALL_PREFIX 下，导出公开头文件、库、VisualSimConfig.cmake、VisualSimTargets.cmake，提供消费端 find_package(VisualSim CONFIG REQUIRED) 和 target_link_libraries(app PRIVATE VisualSim::VisualSim) 的例子。依赖只含实际使用的非 ROS 库；CMake 在 Windows 上明示配置失败，移除 Windows 运行/构建入口。
 
-**不需要也不允许以“Ubuntu 24.04 默认工具链太老”为理由强制降低 CMake、GCC 或 C++ 标准要求**。维持用户现有可用的构建链，并在文档中列明实际选用版本。纳秒时间字段进行 std::is_same_v<TimestampNs,std::int64_t> 等编译期检查。
+**不需要也不允许以“Ubuntu 24.04 默认工具链太老”为理由强制降低 CMake、GCC 或 C++ 标准要求**。维持用户现有可用的构建链。**用户提供的编译环境**：Ubuntu 24.04、CMake 4.3.4（cmake --version）、GCC C++ 16.2.0（c++ --version）；本轮只是记录用户终端输出，**没有实机验证**。来源 ftr-eskf 的独立 VisualSim 子目录使用 cxx_std_23，目标旧工程为 C++20，而 ROS 根项目的标准/反射标志不可直接复制；最终 v1 选择何种 C++ 语言标准应由实际引用的库 API/代码特性决定，不能为“适配 Ubuntu 默认工具链”而下调用户现有 CMake/GCC。纳秒时间字段进行 std::is_same_v<TimestampNs,std::int64_t> 等编译期检查。
 
 ## 10. 验证责任与追踪
 

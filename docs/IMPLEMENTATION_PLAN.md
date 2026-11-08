@@ -7,11 +7,11 @@
 | 角色 | 仓库 | 权限与用途 |
 | --- | --- | --- |
 | **唯一目标仓库** | https://github.com/ncut-d1z/VisualSim | **允许后续修改源码、CMake、示例及 docs，并交付独立库** |
-| **仅供读取的来源仓库** | https://github.com/ncut-d1z/ros2-vio-node/tree/main/src/VisualSim | **只读，用于审查并把适用新代码融合入目标仓库。禁止任何提交、推送、创建 PR 或文件更改** |
+| **仅供读取的来源仓库** | https://github.com/ncut-d1z/ros2-vio-node/tree/ftr-eskf/src/VisualSim | **只读，用于审查并把适用新代码融合入目标仓库。禁止任何提交、推送、创建 PR 或文件更改** |
 
-历史参考基线：目标仓库四份文档修订提交 69d772719aca217456ac936ae7718cdbdc4afb5c；只读来源仓库 main f1cb7a02587199ce2dfc588789f044ccae2945ed。审计提交及当前文档状态见 [AUDIT_PROGRESS.md](AUDIT_PROGRESS.md)。P0 迁移开始前必须重新读取两个仓库的当前 HEAD、复核差异并记录具体版本。
+历史文档基线：目标仓库四份设计文档修订提交 69d772719aca217456ac936ae7718cdbdc4afb5c。**本次源码差异清点冻结比较提交**：目标 main d4b38f2ea73fa5aef700b303517a45ec21281561；只读来源 **ftr-eskf** fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03（不可再用旧 main f1cb7a... 作为本轮迁移版本）。审计提交及当前文档状态见 [AUDIT_PROGRESS.md](AUDIT_PROGRESS.md)。P0 实际实施前须重新读取两个仓库当前 HEAD，并说明与本次固定快照的增量。
 
-源仓库中的 ROS 相关组件只可参考。任何文件若有 ROS/ament/rclcpp/cv_bridge 或与 ROS 消息相关的调用，不允许未经解耦直接移到独立库。只允许把与独立仿真相关的新实现整合到**目标仓库**中。
+**来源 ftr-eskf 的 src/VisualSim 全部代码文件及关联引用见 §3 逐文件表；不能再用旧 main 分支的文件列表判断迁移完成。** 源仓库中的 ROS 相关组件只可参考。任何文件若有 ROS/ament/rclcpp/cv_bridge 或与 ROS 消息相关的调用，不允许未经解耦直接移到独立库。只允许把与独立仿真相关的新实现整合到**目标仓库**中。
 
 ## 2. 生效需求、设计合同与审计状态（引用而不复制）
 
@@ -22,39 +22,124 @@
 
 本计划**不重新定义**已批准的运动模式、坐标方向、校准公式或噪声算法；如发现设计冲突，应先在对应规范文件审计，再更新本计划任务。此前的文档审计对**尚未发行的软件 v1 设计**完善默认标定、名称冲突、布朗桥边界等遗漏，不代表任何现存二进制 ABI 已被破坏；后续若实际公开发行并发生破坏性接口变化，须依 LLD 升级 API/SONAME/schema 并更新四份文档。本项目是**单人开发**，不设置人员分工、日期排期、工时审批等多人项目管理要求。性能预算与性能验收已明确推迟到首次成功运行程序之后再讨论，不属于当前必须决定的事项。
 
-## 3. 代码比对和融合清单
+## 3. 两仓库源码清点、同名差异及融合决策（以固定 commit 为准）
 
-### 3.1 目标仓库现有文件
+**清点范围和计数**：从两仓库 Git tree 递归列举。目标仓库与运行/测试直接相关的头/源文件 **4 个**（src/ 下 3 个、tests/ 下 1 个）。来源 ftr-eskf 的 src/VisualSim/ 下头/源文件 **15 个**，并继续追踪其构建依赖 src/CameraIO/ **5 个**、同一依赖闭包内 include/euroc_vio/ **13 个**、测试依赖 src/VisualSlam/ImageDataLoader.hpp **1 个**，合计 **34 个来源头/源**。两仓库本轮分类表一共 **38 个文件**；CMake 等构建文件单独说明。**不是**把 ros2-vio-node 所有 VIO/ROS 源码统统计作待迁移代码。
 
-| 目标当前文件 | 已有能力 | 后续处理 |
+比对的固定依据为目标 `main@d4b38f2ea73fa5aef700b303517a45ec21281561` 与只读来源 `ftr-eskf@fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03`。后续开始实施时重新检查 HEAD/变更，但本表不可静默改成旧的 main 来源。下表“是：改写/吸收”表示将功能**在目标仓库重新实现**，不等于将来源文件原样复制过去；“否”表示不纳入 v1。
+
+### 3.1 目标仓库：当前全部直接相关头/源/测试（4/4）
+
+| 相对路径 | 当前实际职责 / 关键差异 | 未来目标仓库是否纳入 | 决策与目标位置 / 拒绝原因 |
+| --- | --- | --- | --- |
+| `src/Room.hpp` | 房间六面网格、默认尺寸固定；包含 Points() | 是：保留并改写 | 继续采用 visualsim::Room，融合可配尺寸/校验，添加六个有限表面真值 |
+| `src/Trajectory.hpp` | ForwardConstantVelocity、OpticalAxisConstantRotation；double 秒、单条硬编码运动对象 | 是：保留运动公式，重构接口 | 提取基础公式至事件驱动 Linear/AngularMotion、MotionState，移除静默 clamp |
+| `src/main.cpp` | CLI 硬编码两个场景、单目/IMU 数据导出，内含渲染、YAML、CSV 与 remove_all | 是：重写为薄 CLI | 转到显式配置文件/公共库调用；渲染/IMU/导出拆出；禁隐式删除目录 |
+| `tests/TrajectoryTests.cpp` | 既有前向匀速、纯旋转与 Room 网格检查 | 是：保留并扩展 | 替换过时类调用，扩至事件历史、跨类组合、边界与导数测试 |
+
+### 3.2 来源 ftr-eskf：src/VisualSim 全部头/源文件（15/15）
+
+| 相对路径 | 当前实际职责 / 关键差异 | 未来目标仓库是否纳入 | 决策与目标位置 / 拒绝原因 |
+| --- | --- | --- | --- |
+| `src/VisualSim/Camera.hpp` | Sophus::SE3 相机、针孔 K、投影；外参字段是 T_SB（B→相机），不支持真实畸变 | 是：选择性改写 | 新 CameraCalibration/CameraRenderer；对 T_BC=C→B 必须求逆，使用冻结默认 K 与畸变 |
+| `src/VisualSim/ErrorEvaluation.hpp` | 估计误差评估，依赖 DatumTruth，非仿真观测生成 | 否 | 不进入库；不引入估计器评价代码 |
+| `src/VisualSim/EvoSim3.hpp` | 离线真值/轨迹加载工具，依赖 AbstractLoader、C++ reflection | 否 | 不进入按需运行库；轨迹来源为用户事件及 YAML |
+| `src/VisualSim/ImuNoiseModel.cpp` | 独立 IMU CSV 噪声后处理 CLI，具有自身 main | 否 | 不并入核心或增加离线加噪可执行程序 |
+| `src/VisualSim/ImuNoiseModel.hpp` | mt19937 序列推进、按固定 sample_rate 离散白噪与 bias 游走，持久 bias | 否（仅数学定义参考） | 必须重新实现 LLD §6.2 固定种子、随机时间索引、Brownian-bridge 无偏置历史缓存模型 |
+| `src/VisualSim/LinearKalmanFilter.hpp` | OpenCV 2D 跟踪/滤波辅助算法 | 否 | 不是相机渲染或 IMU 物理仿真需求 |
+| `src/VisualSim/MeshPlot.hpp` | Room 六面棋盘网格填色、固定双目、HighGUI namedWindow/destroyAllWindows | 是：仅渲染功能改写 | RoomRenderer 无窗口副作用、适配 0..N 相机与 CV_8UC1；不用原固定双目 GUI 类 |
+| `src/VisualSim/Path.hpp` | Sophus::SE3 的 Stationary/Acceleration/Circle 和 PathManager 顺序轨迹（浮点秒） | 是：吸收解析运动公式 | 重写为带 TimestampNs 历史的两类即时式模式；不直接迁 PathManager 和朝向耦合模式 |
+| `src/VisualSim/Preintegrate.hpp` | IMU 预积分，依赖 DatumImu；用于估计 | 否 | 不迁移 VIO 后端运算 |
+| `src/VisualSim/Room.hpp` | 带 depth/width/height 构造参数、有限正数检查、GetIndex、六面网格；构造打印 stderr | 是：合并到目标 src/Room.hpp | 沿用目标命名空间与 Points()，融合动态尺寸/校验/GetIndex 所需部分；去除 stderr 副作用 |
+| `src/VisualSim/StereoRig.hpp` | 固定左右两台相机，共同可见路标的索引交集 | 是：相机集合语义重写 | 替换为 0..N CameraRegistry；逐相机独立可见性，不做固定双目交集 |
+| `src/VisualSim/StressModel.hpp` | 额外的像素异常点/噪声、脉冲平移、非零角加速度压力运动 | 否 | v1 无额外像素压力模式，角加速度脉冲不属于冻结的两种角模式 |
+| `src/VisualSim/StressTests.cpp` | StressModel 的运动/像素噪声测试 | 否 | 不引入未批准的 StressModel；有效的通用数值断言另写运行库测试 |
+| `src/VisualSim/VisualInertial.cpp` | rclcpp 节点、ESKF/预积分/数据估计 | 否 | 严格禁止 ROS/VIO/ESKF 代码进入独立仿真库 |
+| `src/VisualSim/VisualSim.cpp` | 双目 CLI、Room 渲染、10:1 IMU、噪声/Stress、CameraFrameWriter；double→ns；写盘及 remove_all | 是：功能重构而非复制文件 | 迁离 main 的算法至 Simulator/Renderer/ImuSynth/Exporter；按请求时间门控 N 相机、无缓存与写盘副作用 |
+
+### 3.3 来源 ftr-eskf：CameraIO 与引用闭包/测试辅助（19/19）
+
+| 相对路径 | 当前实际职责 / 关键差异 | 未来目标仓库是否纳入 | 决策与目标位置 / 拒绝原因 |
+| --- | --- | --- | --- |
+| `src/CameraIO/CameraFrameReader.cpp` | 外部 CSV/PNG/FFV1 时间索引读取及逐帧解码 | 否 | v1 运行时不回放外部相机序列 |
+| `src/CameraIO/CameraFrameWriter.cpp` | CSV/PNG 以及 FFV1 VideoWriter；时间戳用 int64 | 是：仅 PNG/CSV 思路重写 | 改写到目标 DatasetExporter，输出显式请求的 PNG/CSV，不携 FFV1 动态链接 |
+| `src/CameraIO/FFV1Video.hpp` | FFV1 编解码器接口 | 否 | 视频不是 v1 验收范围；现有 FFV1 要 CV_8UC3 |
+| `src/CameraIO/FFV1Video.cpp` | libavcodec/libavformat/libavutil FFV1 Matroska 编解码实现 | 否 | 无 FFmpeg 强制依赖，后续如需视频另设扩展合同 |
+| `src/CameraIO/CameraFrameIOTests.cpp` | PNG/CSV/FFV1 导出读取回归，关联 VisualSlam ImageDataLoader | 是：抽取 PNG/CSV 测试思想 | 写新的目标 ExportTests；不复制依赖 FFmpeg/VisualSlam 的全套测试 |
+| `include/euroc_vio/CameraFrameIO.hpp` | CameraFrameWriter/Reader、CameraOutputMode 视频和图片接口 | 是：仅输出接口理念改写 | 新目标 DatasetExporter 公共/内部接口；不照搬 FastVIO 命名与 FFV1 选项 |
+| `include/euroc_vio/AbstractLoader.hpp` | CSV/真值加载基类，被排除的 EvoSim3/Datum 系列引用 | 否 | 不迁入数据回放/估计器加载器 |
+| `include/euroc_vio/DatumFast.hpp` | 估计器/加载器的 Fast 状态字段 | 否 | 与传感器生成无关 |
+| `include/euroc_vio/DatumImu.hpp` | IMU 数据集读取/预积分数据结构 | 否 | 运行库自定义 ImuMeasurement，不依赖载入器 |
+| `include/euroc_vio/DatumTruth.hpp` | 历史轨迹/估计误差读取 | 否 | 真值来自事件解析，无需外部 TruthLoader |
+| `include/euroc_vio/ErrorStateKalmanFilter.hpp` | VIO ESKF 状态与更新 | 否 | 非仿真生产范围且引入估计器内部依赖 |
+| `include/euroc_vio/SensorState.hpp` | 估计器状态数组类型 | 否 | 不替代 MotionState/传感器标定合同 |
+| `include/euroc_vio/SensorYaml.hpp` | EuRoC 相机/IMU YAML 校准读取、字段有效性校验 | 是：仅字段校验/导出语义改写 | 目标 YAML baseline→events schema v1 与按时刻标定，不能直接调用现有 SensorYaml |
+| `include/euroc_vio/ZUPT.hpp` | 估计器零速度检测/缓冲 | 否 | 不需要 ZUPT 或历史估计缓存 |
+| `include/euroc_vio/StereoObservation.hpp` | ESKF 用双目观测结构（ErrorStateKalmanFilter 的依赖） | 否 | 不强制双目或引入 ESKF |
+| `include/euroc_vio/CircularBuffer.hpp` | ZUPT 环形缓存容器 | 否 | 用户禁止历史帧/位姿/观测结果缓存，且无 ZUPT |
+| `include/euroc_vio/VisionMode.hpp` | VisualSlam ImageDataLoader 测试路径的模式类型 | 否 | 源测试间接依赖，非 v1 运行库类型 |
+| `include/euroc_vio/pch.hpp` | 来源根 CMake common_pch 预编译头，含 rclcpp/cv_bridge/ROS 消息 | 否：严格禁止 | 任何 ROS 头、ament/common_pch 不可进入目标项目 |
+| `src/VisualSlam/ImageDataLoader.hpp` | CameraFrameIOTests 的外部图像读取测试依赖 | 否 | 不移植 VisualSlam 读取器/其他估计器部件 |
+
+**关联范围说明**：CameraIO 的 5 个文件为 CameraFrameReader.cpp、CameraFrameWriter.cpp、FFV1Video.hpp、FFV1Video.cpp、CameraFrameIOTests.cpp；include/euroc_vio 的 13 个文件是对 src/VisualSim 和相关 CameraIO/测试的直接、构建传递、必要二级本地 include 的查证记录。其余 ROS/VIO 业务目录并非 VisualSim 的功能候选，不在迁移表中逐一枚举。来源根目录 src/main.cpp 仅在下方“同名”误判防护中列为排除项，不并入上述 34 个相关文件计数。
+
+### 3.4 同名文件的**实际比较**及语义对应文件的方案
+
+| 对照关系 | 实际文件与哈希 | 代码差异 | 决策 |
+| --- | --- | --- | --- |
+| 同名 Room.hpp（必须逐文件比较） | 目标 src/Room.hpp (blob b6dfb2fc) ↔ 来源 src/VisualSim/Room.hpp (blob e7f63817) | 同为六面离散网格、去重；**目标固定 10×10×3m** 且有 Points()，来源构造可指定深/宽/高并校验有限正数，有 GetIndex()、stderr 打印；两者命名空间不同 | 保留目标文件/namespace，融合来源构造参数及校验与所需索引；RoomConfig 在每个查询时间生效；新增六面真实交点算法，**不能直接覆盖目标 Room.hpp** |
+| 同职责但不同名的轨迹 | 目标 src/Trajectory.hpp (252c7a5e) ↔ 来源 src/VisualSim/Path.hpp (3b5035bf) | 目标只含前向恒速、纯旋转及 clampTime；来源多静止/加速/圆周及顺序 PathManager，Sophus pose、浮点秒；均不具两类独立栈/事件历史/六导数完整合同 | 保留适用解析式，**重写双类别时间事件+BeginMotionMode/EndMotionEnd**；不把旧 PathManager、朝向耦合圆周模型直接作为最终 API |
+| 同职责但不同名的生成器 | 目标 src/main.cpp (53f58afd) ↔ 来源 src/VisualSim/VisualSim.cpp (d8f0aac7) | 目标单目 PNG/CSV、硬编码两场景；来源固定双目、两目交集、CV_8UC3/FFV1、Stress/IMU；双方都有隐式写盘、固定频率和浮点秒生成 ns | 拆分共享库和薄 CLI，统一 Room、0..N 相机、CV_8UC1、整型纳秒门控；不照搬 main 或 remove_all |
+| 同名 CMakeLists（构建文件非源码） | 目标根 CMakeLists.txt (be122ceb) ↔ 来源根 CMakeLists.txt (fae40d06) 与 src/VisualSim/CMakeLists.txt (2c96b178) | 目标 C++20 可执行程序并允许 Windows/MSVC；来源根经 ament/ROS/common_pch 串依赖，来源子目录 standalone 使用 cxx_std_23、camera_frame_io/FFmpeg 与 Windows 选项；均非目标 .so 安装方案 | 只重写目标根 CMake，Linux-only SHARED + install/export/consumer；不复制两份来源 CMake；不强制降低用户现有 GCC/CMake |
+| 同名 main.cpp 但**不同项目职责** | 目标 src/main.cpp ↔ 来源根 src/main.cpp (2f21f1e1) | 来源根 src/main.cpp 是 rclcpp/cv_bridge 与同步器的 ROS 主程序，不是 VisualSim 生成入口 | 来源根 src/main.cpp **排除**，不能因为同名覆盖目标；只把 src/VisualSim/VisualSim.cpp 视为功能对应入口 |
+
+### 3.5 必须遵守的融合约束（不能以“复制后能编译”为验收）
+
+1. **姿态/外参方向**：来源 Camera.hpp 的 sensor_from_body_ 是 T_SB（B→传感器），LLD 公共 T_BC、T_BS 是传感器→载体；复制时如不求逆将导致错投影、错求交/IMU。以 LLD §5/§6 公式为最终准则，并做非单位姿态/非零杆臂验收。
+2. **动态相机和灰度**：来源 StereoRig 两台相机共享可见点交集、VisualSim.cpp 的 CV_8UC3/FFV1 管线与冻结的“任意 0..N 相机，各自独立可见性、CV_8UC1”不一致；必须重写注册/渲染，不导入固定双目类型。
+3. **噪声**：来源 ImuNoiseModel.hpp 使用 mt19937、持久 bias 和固定采样频率，且默认噪声非零；与 LLD §6.2 按时间键的无缓存 Brownian-bridge、默认关闭噪声及固定 v1 测试流不兼容。只能参考 N/√Δt 和 K√Δt 物理统计关系，**不得直接复制噪声状态机**；来源 ImuNoiseModel.cpp 是独立离线 CSV 加噪程序，排除。
+4. **Stress 模型**：来源 StressModel 提供单独的像素 outliers 和脉冲式**非零角加速度**，不属于当前冻结的两种角运动模式；StressTests 仅测试该模型。因此两文件均排除，不能隐式扩充 SRS。
+5. **CameraIO/FFmpeg**：来源 camera_frame_io 是以 FFV1/libavcodec/libavformat/libavutil 为必需编译依赖的静态库；FFV1Encoder::Write 要求 CV_8UC3，与 v1 CV_8UC1 不一致。v1 仅保留显式 PNG/CSV 导出语义，不引入 libav*、FFV1 视频、CameraFrameReader 或 VisualSlam。若未来要求无损视频，应另行设计与改验收，不把 FFmpeg 作为本轮强制依赖。
+6. **Room 真值**：两个 Room.hpp 都只生成离散网格点而非连续六面真实求交；必须在目标实现按指定时刻 RoomConfig 解析的有限六面最近射线交点，不能返回网格顶点充当任意 bearing 的真值；不保留帧/位姿缓存。
+7. **时间与副作用**：目标/来源旧生成器均按 double 秒迭代并转纳秒，且与 CLI 写盘相耦合；必须按 TimestampNs 原样传递并以事件历史分段重算。拒绝同一传感器重复/回退时间；采样和 Raycast 不自动 remove_all、写 CSV、输出 GUI 或修改来源仓库。
+8. **构建依赖与编译特性**：来源根 CMake 的 ament/common_pch 含 ROS；来源独立子目录仍链接 camera_frame_io/FFmpeg。两者均不能作为目标 SHARED 构建配方照抄；允许 Eigen/Sophus/OpenCV/yaml-cpp 按实际使用引入，遵守 Linux-only 与已有 GCC/CMake，不做强制降级。
+
+### 3.6 构建配置/脚本清单（非头/源文件）
+
+| 仓库 | 路径 | 未来处理 |
 | --- | --- | --- |
-| src/Trajectory.hpp | 解析前向匀速、定轴纯旋转（现有角运动未提供完整角加速度字段） | 保留数学能力，改造为事件可激活的模式规范和按需解析运动真值 |
-| src/Room.hpp | 长方体房间、墙面离散网格点 | 保留并用于**唯一** Room 场景，补充真实表面求交和一致纹理 |
-| src/main.cpp | 单目渲染、IMU、固定两条轨迹及 PNG/CSV/YAML 导出 | 将核心功能移入共享库；CLI 改用配置文件/函数事件定义轨迹，删除硬编码两场景 |
-| CMakeLists.txt | 目前主要生成可执行文件、测试目标、包含 Windows 分支 | 增加共享库、导出/安装规则，配置期禁止 Windows，不改成低版本工具链 |
-| CMakePresets.json、build.ps1、run.ps1、clean.ps1、vcpkg.json、README.md | 保留 Windows 路径、PowerShell / vcpkg 指南 | 清除/停止对 Windows 的构建支持，新增 Ubuntu CMake install 与消费者说明 |
-| tests/TrajectoryTests.cpp | 原有轨迹单元测试 | 迁移为新事件/解析轨迹合同测试，保留已有有价值的运动真值断言 |
+| 目标 | `CMakeLists.txt` | **改写**为 Linux-only、可安装 SHARED 库、配置化 CLI、单元测试及独立消费者；不降低 CMake/GCC |
+| 目标 | `CMakePresets.json` | **重写/移除 Windows preset**，按需保留 Linux preset |
+| 目标 | `build.ps1`, `run.ps1`, `clean.ps1` | **删除/禁用** Windows 专用脚本 |
+| 目标 | `vcpkg.json` | 按 Linux 依赖安装策略决定是否保留 manifest；**不得维持有效 Windows 构建路径** |
+| 目标 | `README.md` | 更新编译、安装、传感器 API、配置示例、数据导出和 Linux-only 说明 |
+| 来源只读 | `CMakeLists.txt` | ROS/ament/common_pch 主工程，**不迁入** |
+| 来源只读 | `src/VisualSim/CMakeLists.txt` | standalone C++23 但带 CameraIO/FFmpeg 和 Windows 兼容分支，**不迁入** |
+| 来源只读 | `src/CameraIO/CMakeLists.txt` | 静态 camera_frame_io 与 libav 必需依赖，**不迁入** |
 
-### 3.2 来源仓库中的适用新代码（**只读分析，不对源仓库写入**）
+**合规范围**：只修改目标仓库；以上文件的未来处置是**实施计划**，并非本轮已经修改源码。根目录构建支持脚本不算入上述 38 个头/源清点数。
 
-| 来源路径（相对来源仓库） | 可融合的能力 | 处理注意 |
-| --- | --- | --- |
-| src/VisualSim/Camera.hpp | 相机内参、外参、投影和视域判断 | 改为 0..N 相机；核对外参方向，补足实际畸变；不得只复制数据结构 |
-| src/VisualSim/StereoRig.hpp | 多相机标定与成像的共同时刻关系 | 不保留固定双目类型/左右公共可见点交集约束；广义为相机集合 |
-| src/VisualSim/Path.hpp | 静止、匀加速、圆周、轨迹片段拼接 | 迁移解析物理规律，改为事件驱动的双类别作用域，补全 ω/α 与历史分段 |
-| src/VisualSim/Room.hpp | 长方体表面网格、可配置几何 | 融合到目标唯一 Room 模型，拒绝其他场景 |
-| src/VisualSim/MeshPlot.hpp | Room 六面网格的离屏渲染/纹理构造思路 | 保留图像内容相关代码，删除 GUI 窗口/进程状态副作用 |
-| src/VisualSim/VisualSim.cpp | 双目及 IMU 的采样、EuRoC 风格输出和时间戳生成 | 重构为独立库可重入 API；按需生成全部相机；禁隐式创建、覆盖或删除数据文件 |
-| src/VisualSim/SensorYaml.hpp | 标定及 IMU 噪声字段 | 统一传感器时间线、T_BS 方向、真实生效；去除任何孤立固定配置 |
-| src/VisualSim/Rect.hpp | 图像区域/边界判断 | 按实际需要复用；无复用价值可排除 |
+### 3.7 冻结 v1 功能与**实际代码**的一致性结论
 
-不迁移 ROS 节点与消息、ESKF/VIO 算法、预积分、可视化工程管理或其他不属于独立仿真库的代码。来源中若有对 C++26/新编译器的需求，可以保留合理需求，**不得因为 Ubuntu 版本而强制降低**。
+下表区分“设计已冻结”和“代码已经实现”。这些差距从固定快照的源码得到，并非运行测试结论；不得把文档完成写成实现通过。
+
+| 冻结需求 / 计划目标 | 目标 main 的现状 | 来源 ftr-eskf 的现状 | P0 后的实施决定 |
+| --- | --- | --- | --- |
+| 纯 Linux 可安装 SHARED .so、无 ROS | 只定义 visual_sim 可执行程序，有 Windows/MSVC 分支 | ROS 根工程 ament/common_pch；standalone 仍生成可执行程序且联 FFmpeg | P1 在目标新建 SHARED/install/export/独立消费者，CMake 禁 Windows，排除 ROS/FFmpeg 强制依赖 |
+| BeginMotionMode/EndMotionEnd、两类模式历史、解析六项真值 | 仅 Trajectory 对象的固定轨迹/三角参数，未提供事件 API | PathManager 按浮点秒顺序拼接，角运动与圆周朝向耦合 | P2 新建独立 Linear/Angular 当前模式、作用域事件历史及按时刻重算，不复制旧管理器 |
+| 任意 N 相机、自动 camX/改名、历史标定真实生效 | 只有 cam0，标定在 main 内写死 | Camera/StereoRig 固定 cam0/cam1，T_SB 方向，只有针孔投影 | P3 实现 ID 注册/重命名、T_BC 方向、实际内参与畸变，逐相机独立渲染 |
+| IMU 外参、比力杆臂、默认无噪及无缓存 Brownian-bridge | imu CSV 仅理想比力/固定传感器假设，noise YAML 常量非零但未叠加 | ImuNoiseModel 用逐次 mt19937+内部 bias/固定步长，不满足任意时刻无缓存 | P3 重新实现 IMU 数值模型及 LLD §6.2 随机过程，不迁移旧状态机 |
+| Room 唯一场景与连续真实求交 | Room 网格点已存在，但 main 另有前向三深度离散路标；无 Raycast | Room 六面网格，有可指定尺寸，但无任意 bearing 最近有限面求交 | P4 只保留 Room 六面真实连续几何，场景历史版本生效并实现 Raycast |
+| 传感器门控、无重复时间、int64 纳秒原样输入/输出、无计算结果缓存 | for 循环按 double 秒采样转纳秒，缺 Generate/事件历史 | 同样 double 秒步进并带固定左右目/IMU 频率比；没有 v1 原子事务 | P5 实现 Generate/FrameSequencer 和历史求值；最小 last_successful_ns/帧号，拒绝重复与回退 |
+| 配置文件驱动 CLI、保留 PNG/CSV、无隐式写盘 | 两条内置场景、启动自动输出且会 remove_all | CLI 含 FFV1、Stress 和隐式输出，摄像机帧通过 CameraIO | P6 薄 CLI+配置输入；仅显式导出；保持 CV_8UC1、PNG/CSV，不删除目录 |
+
+**判定**：现行计划的产品目标与 SRS/HLD/LLD 相符，但其原 §1 来源分支、原 §3 源码迁移清单与真实 ftr-eskf **不一致**；本轮修订后二者在**文件范围、迁移/排除决定和工具链来源**上具备静态对齐的执行依据。**并不意味着目标代码已经满足任何新 v1 API 或通过 P0–P6 实施验收**。
 
 ## 4. 实施阶段
 
 | 阶段 | 任务 | 可核验交付 |
 | --- | --- | --- |
-| P0 — 差异审查 | **显式核验 docs/AUDIT.md、docs/AUDIT_PROGRESS.md 存在且可读，并读取其当前状态**；重新查看两仓库当前 HEAD；复核**已冻结的 LLD v1 event API 合同**与实际源码的差异、外参坐标方向、依赖和 Room 边界；若需破坏性变更，先提出并明确升级 API/SONAME/schema 版本且同步 SRS/HLD/LLD/PLAN，不重复执行“冻结” | 实际迁移差异和版本记录，仅在目标仓库；保持来源仓库只读 |
+| P0 — 差异审查 | **显式核验 docs/AUDIT.md、docs/AUDIT_PROGRESS.md 存在且可读，并读取其当前状态**；以本轮 §3 对照的目标 main / 只读来源 **ftr-eskf** 固定快照为起点，实际实施时重新查看两仓库 HEAD；复核**已冻结的 LLD v1 event API 合同**与实际源码的差异、外参坐标方向、依赖和 Room 边界；若需破坏性变更，先提出并明确升级 API/SONAME/schema 版本且同步 SRS/HLD/LLD/PLAN，不重复执行“冻结” | 实际迁移差异和版本记录，仅在目标仓库；保持来源仓库只读 |
 | P1 — Linux 独立库 | 共享库、公共头文件、CMake install/export、消费端示例、无 ROS；禁用 Windows，保留用户现有工具链 | .so 可按前缀安装，外部工程独立构建调用 |
 | P2 — 运动历史 | 两类互斥模式、BeginMotionMode/EndMotionEnd、同类覆盖、跨类组合；时间事件记录、段解析、物理量与作用域恢复；函数/YAML 同构 | 每个时间的 p/R/v/a/ω/α 正确，无运动中间结果缓存 |
 | P3 — 传感器历史 | 自动 camX 创建及改名、0..N 相机、默认 cam0、历史 K/T_BC/畸变与 imu0/T_BS/噪声，均实际影响输出 | 各相机个性化成像与 IMU 真值/噪声按历史修改生效 |
@@ -131,6 +216,17 @@
 
 版本号是从运行环境采集的**复现记录**，不需要人为预设审批。发现 ABI 变化时，依设计更新主版本并复验独立消费者。
 
+
+
+**用户已经提供的 Ubuntu 24.04 编译工具链事实（非本轮实机验证）**：
+
+| 命令 | 用户提供的输出 | 状态与用途 |
+| --- | --- | --- |
+| `cmake --version` | `cmake version 4.3.4` | 已知当前环境版本；P0 核对时保留，不提出版本降级 |
+| `c++ --version` | `c++ (GCC) 16.2.0` | 已知当前环境版本；P0 复核实际 C++ 特性/链接和 ABI |
+| 目标 OS | Ubuntu 24.04 | 仅面向 Linux，不扩展 Windows 构建支持 |
+
+上述文字是**用户终端输出**的记录，非本轮执行命令的结果，也不代表 CTest 已通过。目标仓库目前 CMakeLists 设 C++20；来源 standalone 子目录要求 cxx_std_23，来源 ROS 主 CMake 有不同标准/反射要求；v1 实现须根据真正使用的语言特性选择标准和编译参数，**不强制降低现有的 GCC 16.2.0 或 CMake 4.3.4**。若改动 C++ 标准需在 P1 记录理由与实际验收结果。
 ### 7.3 本地验证范围
 
 | 环境 | 检查内容 |
@@ -173,7 +269,7 @@
 以下是后续 Ubuntu 24.04 验收的命令模板。库尚未实现；命令不构成已通过证据。
 
 ~~~bash
-# P0 依赖/工具链冻结，保存结果到目标仓库的验收记录（不写来源仓库）
+# P0 对照用户已提供的 CMake 4.3.4 / GCC 16.2.0，再实测并登记差异（不写来源仓库）
 # 先确认审计规范及进度记录存在且可读；不可跳过后继续宣称文档审计闭环
 test -r docs/AUDIT.md && test -r docs/AUDIT_PROGRESS.md || { echo "Missing or unreadable docs audit files" >&2; exit 1; }
 git rev-parse HEAD
