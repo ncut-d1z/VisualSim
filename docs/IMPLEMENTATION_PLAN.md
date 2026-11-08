@@ -54,7 +54,7 @@
 
 | 阶段 | 任务 | 可核验交付 |
 | --- | --- | --- |
-| P0 — 差异审查 | 重新查看两仓库当前 HEAD；复核**已冻结的 LLD v1 event API 合同**与实际源码的差异、外参坐标方向、依赖和 Room 边界；若需破坏性变更，先提出并明确升级 API/SONAME/schema 版本且同步 SRS/HLD/LLD/PLAN，不重复执行“冻结” | 实际迁移差异和版本记录，仅在目标仓库；保持来源仓库只读 |
+| P0 — 差异审查 | **显式核验 docs/AUDIT.md、docs/AUDIT_PROGRESS.md 存在且可读，并读取其当前状态**；重新查看两仓库当前 HEAD；复核**已冻结的 LLD v1 event API 合同**与实际源码的差异、外参坐标方向、依赖和 Room 边界；若需破坏性变更，先提出并明确升级 API/SONAME/schema 版本且同步 SRS/HLD/LLD/PLAN，不重复执行“冻结” | 实际迁移差异和版本记录，仅在目标仓库；保持来源仓库只读 |
 | P1 — Linux 独立库 | 共享库、公共头文件、CMake install/export、消费端示例、无 ROS；禁用 Windows，保留用户现有工具链 | .so 可按前缀安装，外部工程独立构建调用 |
 | P2 — 运动历史 | 两类互斥模式、BeginMotionMode/EndMotionEnd、同类覆盖、跨类组合；时间事件记录、段解析、物理量与作用域恢复；函数/YAML 同构 | 每个时间的 p/R/v/a/ω/α 正确，无运动中间结果缓存 |
 | P3 — 传感器历史 | 自动 camX 创建及改名、0..N 相机、默认 cam0、历史 K/T_BC/畸变与 imu0/T_BS/噪声，均实际影响输出 | 各相机个性化成像与 IMU 真值/噪声按历史修改生效 |
@@ -94,7 +94,7 @@
 | V04 | 静止、恒速、恒加速、圆周、纯旋转、多段拼接 p/R/v/a/ω/α 与解析公式一致 | AC-04 | 未执行 |
 | V05 | 核验默认 cam0 及仅给 T_BC 的 CreateCamera 可直接按 K=(458.654,457.296,367.215,248.375)、752×480、零畸变、20 Hz、CV_8UC1 成像；默认 cam0 在已 SetCameraCalibration 或 Rename 后的首次 CreateCamera 不得覆盖它；改名 cam0→cam1 后新建相机自动跳至 cam2、SensorId/帧号不变 | AC-05 | 未执行 |
 | V06-D | **确定性检查**：不同相机 K/T_BC/畸变、IMU T_BS/杆臂确实改变观测；g_W 固定为 (0,0,-9.81) m/s²、无可变重力接口；禁噪理想值、启噪复现及固定 seed 逐元素重放；布朗桥 t_epoch 的 W(0)=0、INT64_MAX 边界相对纳秒不溢出 | AC-06 | 未执行 |
-| V06-S | **统计检查**：使用 LLD §6.2 冻结的 Δt=5ms、种子 0..7、各流 4096 样本、每组 n=98304/ν=98303，对 gyro/accel white 与 gyro/accel walk 四组分别要求双侧 99% 卡方范围 [97164.6270, 99448.8862] | AC-06 | 未执行 |
+| V06-S | **统计检查**：隔离 gyro/accel white 与 gyro/accel walk 四组噪声，分别执行双侧 99% 卡方检验；**独立种子、采样间隔、样本量、自由度和阈值均以 LLD §6.2 冻结表为唯一准据**，此处不重复数值以免漂移 | AC-06 | 未执行 |
 | V07 | 任意 N 相机门控、逐传感器重复/回退拒绝；整批失败时序号不变 | AC-07 | 未执行 |
 | V08 | 未生成图像的任意有效时刻，Room 六个有限面真实最近交点及视域失败状态；空 bearings_C+有效时间/相机须 Ok 空列表，空 bearings_C+无效时间/相机仍返回整体错误 | AC-08 | 未执行 |
 | V09 | 事件改变可重算历史，源代码审查与内存量测证明不保留按帧/位姿/IMU/交点结果 | AC-09 | 未执行 |
@@ -174,6 +174,8 @@
 
 ~~~bash
 # P0 依赖/工具链冻结，保存结果到目标仓库的验收记录（不写来源仓库）
+# 先确认审计规范及进度记录存在且可读；不可跳过后继续宣称文档审计闭环
+test -r docs/AUDIT.md && test -r docs/AUDIT_PROGRESS.md || { echo "Missing or unreadable docs audit files" >&2; exit 1; }
 git rev-parse HEAD
 cmake --version
 c++ --version

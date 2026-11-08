@@ -2,7 +2,7 @@
 
 > 状态：**v1 设计合同基线（本轮文档审计完成后冻结，待代码实施和功能验证）**；本合同并非源码已实现或测试通过的证明。最终功能以 [SRS.md](SRS.md) 为准，架构见 [HLD.md](HLD.md)，工程实施/代码迁移见 [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md)。
 >
-> 本文中的文件名、类型和函数签名是**拟议实现**，并不表示当前仓库已有对应 API。唯一可写目标仓库为 ncut-d1z/VisualSim。来源仓库 ncut-d1z/ros2-vio-node 只读。平台 Ubuntu 24.04，禁止 Windows 构建；不强制降级构建工具链。
+> 本文所列文件名用于后续源码组织；**类型和函数签名属于未来实现的 v1 已冻结设计合同，当前源码尚未实现**。唯一可写目标仓库为 ncut-d1z/VisualSim。来源仓库 ncut-d1z/ros2-vio-node 只读。平台 Ubuntu 24.04，禁止 Windows 构建；不强制降级构建工具链。
 
 ## 1. 必须遵循的存储边界
 
@@ -214,7 +214,7 @@ private:
 
 ### 2.4 时间域及参数合法性（v1 冻结）
 
-有效纳秒范围 0≤t≤INT64_MAX。事件按非递减纳秒追加，所有纳秒字段为 std::int64_t；整数差分先检验溢出，解析运动时只将相对纳秒差转成 double 秒，不能用浮点秒往返覆盖原时间。输入非有限按 InvalidArgument/InvalidCalibration，计算导致的非有限运动输出按 TimeOutOfRange。
+有效纳秒范围 0≤t≤INT64_MAX。事件按非递减纳秒追加，所有纳秒字段为 std::int64_t；整数差分先检验溢出，解析运动时只将相对纳秒差转成 double 秒，不能用浮点秒往返覆盖原时间。**判定顺序**：①先按各接口已冻结的时间域合同检验时间参数；②在任何数值计算之前检验调用者输入的有限性与合法性（普通输入非有限按 InvalidArgument、标定非有限按 InvalidCalibration，配置文件解析错误按 §9.1 的 InvalidConfigSchema）；③输入通过后执行解析计算；④仅对计算本身产生的非有限运动结果使用 TimeOutOfRange。Raycast 的逐条 InvalidBearing 和全局错误优先级仍遵守 §7，不得以计算错误掩盖非法输入。
 
 | 数值检查 | v1 确定接受范围（等号属于有效边界） | 失败 |
 | --- | --- | --- |
@@ -242,7 +242,7 @@ ActiveMotion = {
 ScopeStack = stack of saved ActiveMotion
 ~~~
 
-默认两类均为 Stationary。BeginMotionMode 在给定时间保存当前一对模式及全部参数至作用域栈；EndMotionEnd 从栈顶恢复这一对模式及参数。SetLinearMotion 替换整个 linear 槽，SetAngularMotion 替换整个 angular 槽。若想仅改变该模式的某个参数，可为该槽提供精确的 SetLinearParameter/SetAngularParameter 操作，但效果仍是**替换同类当前有效规范**而非新建第二个并行模式。
+默认两类均为 Stationary。BeginMotionMode 在给定时间保存当前一对模式及全部参数至作用域栈；EndMotionEnd 从栈顶恢复这一对模式及参数。SetLinearMotion 替换整个 linear 槽，SetAngularMotion 替换整个 angular 槽。**v1 仅通过 SetLinearMotion / SetAngularMotion 提交完整的同类模式规范**；SetLinearParameter / SetAngularParameter 不属于 v1 冻结公开接口。未来若新增单字段修改 API，必须按接口版本变更规则同步 SRS、HLD、LLD 和实施计划，且不得改变同类覆盖原则。
 
 ### 3.2 调用示例与期望效果
 
@@ -471,6 +471,8 @@ v1 的伪随机位流固定使用 SplitMix64 置换：先对 64 位无符号键�
 | 固定数值参考阈值 | 对 \(\nu=98303\)，下界 **97164.6270**、上界 **99448.8862**（四舍五入展示；实现以所给卡方分位定义为准） |
 | 通过条件 | 四组**全部**通过各自的双侧 99% 方差区间，同时通过 V06-D 的禁噪无噪、固定种子逐元素重放及参数真实生效检查 |
 
+**适用范围：上述卡方分位、样本量、自由度和数值参考阈值仅用于 V06-S 的随机噪声统计验收，不是其他运动、相机投影、Room 求交或传感器误差的通用数值容差。** 参考阈值仅作四舍五入显示，实施判定始终以表中冻结的卡方分位定义为准。
+
 白噪和偏置游走**分别隔离测试**，不能把含布朗偏置的总输出直接作为白噪独立样本。随机游走增量由连续时间布朗运动定义，固定采样步长下协方差与上述理论方差一致。四次分别 99% 检验并不声称联合 99% 家族置信度；若今后需要联合错误率控制，须升版约定，不擅自修改上述冻结阈值。这里的独立样本指不同种子/独立轴流和布朗运动不重叠增量。另行验证相同工具链和相同调用序列的固定种子逐元素重放（V06-D），不使用统计区间代替确定性验证。
 
 ## 7. Room 真实求交与可见性
@@ -630,7 +632,7 @@ reactivation_policy: ReanchorOnReactivation
 
 1. schema_version 必须是整数 1，其他版本报 InvalidConfigSchema；未知顶层键、未知 op、重复 YAML map key、非法数量、非有限数、非单位旋转/法向、同一时间的名称冲突均拒绝。
 2. timestamp_ns、sampling 中的 *_times_ns 必须是 YAML 十进制**整数**，在 std::int64_t 非负范围，禁止浮点数、科学计数法、溢出或字符串冒充纳秒。baseline 在 t=0 **始终先于 events**，按 room→pose→imu 固定顺序合成历史事件；events 时间须非递减，同刻以数组顺序确定其后续 insertion_order（§9.1 开头已冻结覆盖规则）。
-3. quaternion 顺序固定 **w,x,y,z**；位置/平移 [x,y,z]，K_row_major 是 3×3 按行展开的 9 个数，radtan 为 [k1,k2,p1,p2]。imuread 读取的 noise density 单位由 §6.2 固定。
+3. quaternion 顺序固定 **w,x,y,z**；位置/平移 [x,y,z]，K_row_major 是 3×3 按行展开的 9 个数，radtan 为 [k1,k2,p1,p2]。IMU 标定字段的 noise density 单位由 §6.2 固定。
 4. LoadMotionConfig(path) 仅允许用于**尚无显式业务事件且尚未输出帧**的新实例；整个文档先解析、验证、重建局部状态，成功才整体提交，任一错误则原对象完全不变。错误 message 包含可读 YAML 路径（如 events[3].value.axis_B），调用者以 Status 判断错误类别。
 5. sampling 是**CLI 导出请求计划**，不是运动/标定修改事件；库的 LoadMotionConfig 只验证其结构并不隐式生成数据或写文件。新建模拟器若在未显式设置相机参数时直接按 sampling 生成图像，则输出默认尺寸 752×480、像素格式 CV_8UC1，必须使用 §5.1 的默认标定；不允许因为省略 K/width/height 而使用未初始化值。CLI 将两个 *_times_ns 合并、升序调度，每时刻为对应门控合并一次 Generate。不同传感器可同时间采样，单一传感器时间序列必须严格递增。
 6. 读取和写出的配置应保留事件顺序、标定数值及版本标记；库内事件历史 ChangeRecord 的 canonical_payload_yaml 可使用这里定义的 value 同构序列化，不得把计算出的图像或位姿追加进历史。
