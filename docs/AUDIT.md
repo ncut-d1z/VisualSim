@@ -90,3 +90,43 @@
 3. **新决定优先于初次审计清单**：原 PLAN-03 涉及团队协作的要求已经撤销，不得按旧标准继续标记未整改。
 4. 原 28 项审计编号继续追踪文档整改；性能延期另以 PERF-01 单列，不计为文档整改未完成。
 5. 未出现新的、无法用既定业务约束确定的需求冲突时，无须再次征求人工批准即可进入实现与功能正确性验证。
+
+
+## 8. 新一轮人工审计输入与适用规则（2026-11-08）
+
+**本轮修改意见于审计前登记。** 上述 28 项为前一轮整改历史，本轮登记 20 项（见本节），**不能沿用前轮的 100% 状态替代新审计**。此次人工评价认为四份文档的层级规范、追踪矩阵、NFR 和风险分析均较上一版有明显改进：SRS“较高”、HLD“较高”、LLD“高但未完全冻结”、实施计划“符合定位”；但仍存在跨文档接口不一致、LLD 未冻结条款、YAML baseline 同刻排序不明确、状态标签冲突。允许修复文档，未经授权不修改生产代码。
+
+### 8.1 本轮逐项整改目标（20 项）
+
+| ID | 相对文档路径 | 严重性 | 人工意见与验收目标 |
+| --- | --- | --- | --- |
+| R2-SRS-01 | `docs/SRS.md`、`docs/LLD.md` | 必须 | 统一圆周运动“圆心/半径/轨道平面/相位”需求与 LinearUniformCircular 接口：采用显式圆心+相位及冲突规则，或将需求明确为相对半径/方向隐式表达。 |
+| R2-SRS-02 | `docs/SRS.md`、`docs/LLD.md` | 建议 | SRS §6 历史查询的“可选事件范围”与 LLD 无参 GetChangeHistory 不一致；增加区间重载或删去能力。 |
+| R2-SRS-03 | `docs/SRS.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 建议 | AC-06 噪声统计必须对应 LLD 实际冻结的样本量、自由度、独立种子数、统计判定区间和可执行测试。 |
+| R2-SRS-04 | `docs/SRS.md` | 建议 | NFR-02 明确标注“延期验收项/当前非阻断”，不误写为已验证。 |
+| R2-HLD-01 | `docs/HLD.md` | 建议 | 补运行时交互图：事件提交→EventTimeline、Generate→Evaluate→Renderer/IMU→事务提交、Raycast→Evaluate→Room。 |
+| R2-HLD-02 | `docs/HLD.md` | 建议 | 补 Linux 安装部署图：消费者→CMake package→共享库→非 ROS 依赖，描述构建/运行边界。 |
+| R2-HLD-03 | `docs/HLD.md`、`docs/LLD.md` | 建议 | HLD 的浮点/容差风险缓解必须指向 LLD 确定数值；禁止将“LLD 会定义”误报为已落实。 |
+| R2-HLD-04 | `docs/HLD.md`、`docs/SRS.md` | 建议 | 明确 NFR-02 目前未正式验收，只保留可测量能力；与 SRS 延期状态一致。 |
+| R2-LLD-01 | `docs/LLD.md` | 必须 | 消除 SO(3)、单位法向、四元数、求交平行/边界容差的“建议固定”“测试计划确定”；给出明确数值、单位、边界策略及可执行判定。 |
+| R2-LLD-02 | `docs/LLD.md` | 必须 | YAML baseline 一律先于 events；timestamp_ns=0 的事件按 YAML 数组顺序应用，明确 insertion_order 与覆盖关系。 |
+| R2-LLD-03 | `docs/LLD.md` | 建议 | 冻结 Raycast 整体失败与逐条 InvalidBearing、OutsideFov、NoIntersection、CameraNotFound 等码的优先级和映射。 |
+| R2-LLD-04 | `docs/LLD.md` | 建议 | 在 std::bad_alloc 之外明确 OpenCV/Eigen/yaml-cpp 等第三方异常的统一翻译规则及配置/Generate 的强异常保证。 |
+| R2-LLD-05 | `docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 建议 | 冻结 IMU 白噪与随机游走 99% 卡方检验的样本量、自由度、种子数量、计算公式与阈值；不把原理叙述当验收规则。 |
+| R2-LLD-06 | `docs/LLD.md`、`docs/SRS.md` | 建议 | GetChangeHistory API 是否具有 from_ns/to_ns 范围重载须与 SRS 外部接口保持一致。 |
+| R2-PLAN-01 | `docs/IMPLEMENTATION_PLAN.md`、`docs/LLD.md` | 必须 | P0 “冻结 event API”与 LLD“v1 冻结合同”不能同时成立；改复核 v1 与 HEAD 差异，变更走版本升级与同步文档。 |
+| R2-PLAN-02 | `docs/IMPLEMENTATION_PLAN.md`、`docs/AUDIT.md`、`docs/AUDIT_PROGRESS.md` | 建议 | 计划对 AUDIT 文档的引用必须可访问；明确缺失时的回退基线，现仓库已有审计文档须保持链接有效。 |
+| R2-PLAN-03 | `docs/IMPLEMENTATION_PLAN.md`、`docs/LLD.md` | 建议 | V06 拆分/标注“确定性逐元素重放”和“99% 噪声统计检验”，引用冻结后的参数。 |
+| R2-PLAN-04 | `docs/IMPLEMENTATION_PLAN.md` | 建议 | 补可操作的 ctest 测试列表、Windows 配置负例、ROS 依赖扫描 ldd/readelf 的模板，不声称已执行。 |
+| R2-X-01 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 必须 | 统一设计状态标签（拟议/冻结/待实施/待审计）及 P0 工作定义，勿把未冻结口径或未执行的测试标为已通过。 |
+| R2-X-02 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 建议 | 复扫 FR/AC→LLD→V→P、冻结容差/NFR 延期和业务边界；保留无 ROS、Room-only、即时模式、动态相机、无历史结果缓存等已决定约束。 |
+
+### 8.2 审计执行规范
+
+1. **先登记、提交、再审计**：先将本节目标和 AUDIT_PROGRESS.md 本轮 20 条状态提交到目标仓库，初始标注“待核验 / 未整改”；然后逐文件审计现行 main，引用准确章节与文本证据。
+2. 审计文件状态仅用 **未审计 / 正在审计 / 已审计**；目标整改状态仅用 **未整改 / 整改中 / 已整改 / 待人类决策**，若已经满足，标“已核验无需修改”并在进度表列证据（统计视为已闭环）。
+3. 每条意见必须据最新文件核验：不能因为人工评语提到了某段，便断言该段当前仍存在。若问题已被别人修复，应标记“现状已满足”，不得制造无关改动。
+4. **先解决四条关键必须修：R2-SRS-01、R2-LLD-02、R2-LLD-01、R2-PLAN-01**。其他“建议修”在不违背既定产品需求下同步整改；不得更改已获批准的业务边界。
+5. “完全冻结、可无歧义实施”只有在所有当前约定项都确定、四文档状态一致、跨文档复扫后才能认定。性能 NFR-02 依原决定继续**延期至首次有效运行后**，不伪造指标或通过记录。
+6. 每条“已整改”必须具备具体文档位置和本次提交；最终审计结果须分别统计旧轮 28/28 与新轮 20 项，并列出未整改/待决事项。**仅文档整改，不代表 .so 已实现/编译/测试通过。**
+7. 文件范围：SRS、HLD、LLD、IMPLEMENTATION_PLAN；辅助审计档 AUDIT/AUDIT_PROGRESS。只修改 `ncut-d1z/VisualSim/docs/`，来源 `ros2-vio-node` 只读。

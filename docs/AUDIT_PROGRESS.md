@@ -1,6 +1,6 @@
 # VisualSim 文档审计进度（AUDIT_PROGRESS）
 
-> 规则与全部目标见 [AUDIT.md](AUDIT.md)。第四阶段：**按单人项目和性能延期决定完成收尾；28/28 项文档整改已结案**。审计中发现的问题必须按相同 ID 更新本表；跨文档条目 X 是联动核验项，不因某个单文件改动自动关闭。
+> 规则与全部目标见 [AUDIT.md](AUDIT.md)。历史第四阶段：**上轮 28/28 项整改已结案；本轮另见第 8 节，尚待审计**。审计中发现的问题必须按相同 ID 更新本表；跨文档条目 X 是联动核验项，不因某个单文件改动自动关闭。
 
 ## 1. 审计对象
 
@@ -128,3 +128,49 @@
 **当前需要额外人类干预的阻断决策：0 项。** PERF-01 属于明确同意延期的技术工作，不统计到原 28 项文档整改的未完成数里。首次成功运行程序后才重新评估，不在此假定性能预算、运行结果或验收通过。
 
 本轮未修改任何生产代码，没有实际执行编译、运行程序或性能验收。本轮修订提交：838160689e0059c087cd5db8e4a5ac6c19bec4d7；提交后六份 docs 文档的 Git blob SHA 全部核验一致，来源仓库 HEAD 仍为 f1cb7a02587199ce2dfc588789f044ccae2945ed。
+
+
+## 8. 新一轮审计任务登记（2026-11-08，先于本轮正式审计）
+
+> 这是**新的独立审计批次**。旧轮 28/28 的历史结案数据继续保留，但**不代表本轮已完成**。人工评价：SRS 和 HLD 规范符合度较高、LLD 高但有未冻结项、实施计划定位正确；正式结果以逐文件实际核验为准。本表在审计开始前以“未审计/未整改”初始化，之后由审计与文档整改提交更新。
+
+### 8.1 本轮文件审计状态
+
+| 仓库相对路径 | 本轮状态 | 预计核验点 |
+| --- | --- | --- |
+| `docs/SRS.md` | 未审计 | FR-M01/FR-M04 圆周、§6 历史查询、AC-06、NFR-02 |
+| `docs/HLD.md` | 未审计 | 运行时序/安装部署、NFR 延期、数值风险、状态标签 |
+| `docs/LLD.md` | 未审计 | API/容差/YAML t=0/Raycast 错误/第三方异常/统计参数 |
+| `docs/IMPLEMENTATION_PLAN.md` | 未审计 | P0 状态、审计引用、V06、验收命令 |
+
+### 8.2 新增整改目标（共 20 项，未审计）
+
+| ID | 文件 | 严重性 | 整改目标 | 审计结论 | 整改状态 | 证据 |
+| --- | --- | --- | --- | --- | --- | --- |
+| R2-SRS-01 | `docs/SRS.md`、`docs/LLD.md` | 必须 | 统一圆周运动“圆心/半径/轨道平面/相位”需求与 LinearUniformCircular 接口：采用显式圆心+相位及冲突规则，或将需求明确为相对半径/方向隐式表达。 | 待核验 | 未整改 | 审计后填写 |
+| R2-SRS-02 | `docs/SRS.md`、`docs/LLD.md` | 建议 | SRS §6 历史查询的“可选事件范围”与 LLD 无参 GetChangeHistory 不一致；增加区间重载或删去能力。 | 待核验 | 未整改 | 审计后填写 |
+| R2-SRS-03 | `docs/SRS.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 建议 | AC-06 噪声统计必须对应 LLD 实际冻结的样本量、自由度、独立种子数、统计判定区间和可执行测试。 | 待核验 | 未整改 | 审计后填写 |
+| R2-SRS-04 | `docs/SRS.md` | 建议 | NFR-02 明确标注“延期验收项/当前非阻断”，不误写为已验证。 | 待核验 | 未整改 | 审计后填写 |
+| R2-HLD-01 | `docs/HLD.md` | 建议 | 补运行时交互图：事件提交→EventTimeline、Generate→Evaluate→Renderer/IMU→事务提交、Raycast→Evaluate→Room。 | 待核验 | 未整改 | 审计后填写 |
+| R2-HLD-02 | `docs/HLD.md` | 建议 | 补 Linux 安装部署图：消费者→CMake package→共享库→非 ROS 依赖，描述构建/运行边界。 | 待核验 | 未整改 | 审计后填写 |
+| R2-HLD-03 | `docs/HLD.md`、`docs/LLD.md` | 建议 | HLD 的浮点/容差风险缓解必须指向 LLD 确定数值；禁止将“LLD 会定义”误报为已落实。 | 待核验 | 未整改 | 审计后填写 |
+| R2-HLD-04 | `docs/HLD.md`、`docs/SRS.md` | 建议 | 明确 NFR-02 目前未正式验收，只保留可测量能力；与 SRS 延期状态一致。 | 待核验 | 未整改 | 审计后填写 |
+| R2-LLD-01 | `docs/LLD.md` | 必须 | 消除 SO(3)、单位法向、四元数、求交平行/边界容差的“建议固定”“测试计划确定”；给出明确数值、单位、边界策略及可执行判定。 | 待核验 | 未整改 | 审计后填写 |
+| R2-LLD-02 | `docs/LLD.md` | 必须 | YAML baseline 一律先于 events；timestamp_ns=0 的事件按 YAML 数组顺序应用，明确 insertion_order 与覆盖关系。 | 待核验 | 未整改 | 审计后填写 |
+| R2-LLD-03 | `docs/LLD.md` | 建议 | 冻结 Raycast 整体失败与逐条 InvalidBearing、OutsideFov、NoIntersection、CameraNotFound 等码的优先级和映射。 | 待核验 | 未整改 | 审计后填写 |
+| R2-LLD-04 | `docs/LLD.md` | 建议 | 在 std::bad_alloc 之外明确 OpenCV/Eigen/yaml-cpp 等第三方异常的统一翻译规则及配置/Generate 的强异常保证。 | 待核验 | 未整改 | 审计后填写 |
+| R2-LLD-05 | `docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 建议 | 冻结 IMU 白噪与随机游走 99% 卡方检验的样本量、自由度、种子数量、计算公式与阈值；不把原理叙述当验收规则。 | 待核验 | 未整改 | 审计后填写 |
+| R2-LLD-06 | `docs/LLD.md`、`docs/SRS.md` | 建议 | GetChangeHistory API 是否具有 from_ns/to_ns 范围重载须与 SRS 外部接口保持一致。 | 待核验 | 未整改 | 审计后填写 |
+| R2-PLAN-01 | `docs/IMPLEMENTATION_PLAN.md`、`docs/LLD.md` | 必须 | P0 “冻结 event API”与 LLD“v1 冻结合同”不能同时成立；改复核 v1 与 HEAD 差异，变更走版本升级与同步文档。 | 待核验 | 未整改 | 审计后填写 |
+| R2-PLAN-02 | `docs/IMPLEMENTATION_PLAN.md`、`docs/AUDIT.md`、`docs/AUDIT_PROGRESS.md` | 建议 | 计划对 AUDIT 文档的引用必须可访问；明确缺失时的回退基线，现仓库已有审计文档须保持链接有效。 | 待核验 | 未整改 | 审计后填写 |
+| R2-PLAN-03 | `docs/IMPLEMENTATION_PLAN.md`、`docs/LLD.md` | 建议 | V06 拆分/标注“确定性逐元素重放”和“99% 噪声统计检验”，引用冻结后的参数。 | 待核验 | 未整改 | 审计后填写 |
+| R2-PLAN-04 | `docs/IMPLEMENTATION_PLAN.md` | 建议 | 补可操作的 ctest 测试列表、Windows 配置负例、ROS 依赖扫描 ldd/readelf 的模板，不声称已执行。 | 待核验 | 未整改 | 审计后填写 |
+| R2-X-01 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 必须 | 统一设计状态标签（拟议/冻结/待实施/待审计）及 P0 工作定义，勿把未冻结口径或未执行的测试标为已通过。 | 待核验 | 未整改 | 审计后填写 |
+| R2-X-02 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 建议 | 复扫 FR/AC→LLD→V→P、冻结容差/NFR 延期和业务边界；保留无 ROS、Room-only、即时模式、动态相机、无历史结果缓存等已决定约束。 | 待核验 | 未整改 | 审计后填写 |
+
+### 8.3 初始统计与基线
+
+- **上轮历史：** 28/28 已整改，4/4 文件已审计；不重开。
+- **本轮（登记时）：** 0/4 文件已审计；0/20 项完成核验；0/20 项已整改；20 项未整改（待核验，不代表问题在当前版本一定存在）。
+- **必须修：** R2-SRS-01、R2-LLD-02、R2-LLD-01、R2-PLAN-01。
+- **本轮初始化基线 HEAD：** `5483311742e955387a2ef9054b1a9263d824d2db`。先提交本登记，然后核验最新四份文档。未运行构建、CTest 或仿真；PERF-01 延期仍有效。
