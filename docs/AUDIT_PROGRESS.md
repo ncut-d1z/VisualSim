@@ -1,6 +1,6 @@
 # VisualSim 文档审计进度（AUDIT_PROGRESS）
 
-> 规则与全部目标见 [AUDIT.md](AUDIT.md)。历史第四阶段：**上轮 28/28 项整改已结案；本轮另见第 8 节，尚待审计**。审计中发现的问题必须按相同 ID 更新本表；跨文档条目 X 是联动核验项，不因某个单文件改动自动关闭。
+> 规则与全部目标见 [AUDIT.md](AUDIT.md)。历史第四阶段：**上轮 28/28 项已结案；新轮 20/20 项已审计、已整改或核验满足**。审计中发现的问题必须按相同 ID 更新本表；跨文档条目 X 是联动核验项，不因某个单文件改动自动关闭。
 
 ## 1. 审计对象
 
@@ -143,30 +143,30 @@
 | `docs/LLD.md` | 已审计 | API/容差/YAML t=0/Raycast 错误/第三方异常/统计参数 |
 | `docs/IMPLEMENTATION_PLAN.md` | 已审计 | P0 状态、审计引用、V06、验收命令 |
 
-### 8.2 新增整改目标（共 20 项，未审计）
+### 8.2 新增整改目标（共 20 项，已审计且复核整改）
 
 | ID | 文件 | 严重性 | 整改目标 | 审计结论 | 整改状态 | 证据 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R2-SRS-01 | `docs/SRS.md`、`docs/LLD.md` | 必须 | 统一圆周运动“圆心/半径/轨道平面/相位”需求与 LinearUniformCircular 接口：采用显式圆心+相位及冲突规则，或将需求明确为相对半径/方向隐式表达。 | 确认需修 | 未整改 | 确认：SRS §2 FR-M01/04 要求圆心和相位，LLD §2 LinearUniformCircular 仅 radius_W_m/normal_W/rate；§4.2 口头提世界圆心但无接口。 |
-| R2-SRS-02 | `docs/SRS.md`、`docs/LLD.md` | 建议 | SRS §6 历史查询的“可选事件范围”与 LLD 无参 GetChangeHistory 不一致；增加区间重载或删去能力。 | 确认需修 | 未整改 | 确认：SRS §6 历史输入含“可选事件范围”，LLD §2 仅无参 GetChangeHistory()。 |
-| R2-SRS-03 | `docs/SRS.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 建议 | AC-06 噪声统计必须对应 LLD 实际冻结的样本量、自由度、独立种子数、统计判定区间和可执行测试。 | 确认需修 | 未整改 | 确认：SRS AC-06 指向统计检验；LLD §6.2 仅有 99% 口径，无 n/ν/种子/阈值。 |
-| R2-SRS-04 | `docs/SRS.md` | 建议 | NFR-02 明确标注“延期验收项/当前非阻断”，不误写为已验证。 | 现状已满足 | 已整改 | 已核验无需修改：SRS §8 NFR-02 明写“性能可测量，验收延期”和非阻断，§9 AC-11 亦延期。 |
-| R2-HLD-01 | `docs/HLD.md` | 建议 | 补运行时交互图：事件提交→EventTimeline、Generate→Evaluate→Renderer/IMU→事务提交、Raycast→Evaluate→Room。 | 确认需修 | 未整改 | 确认：HLD §2 有静态概念图，§3/§8 为文字概述，缺三条关键运行时交互视图。 |
-| R2-HLD-02 | `docs/HLD.md` | 建议 | 补 Linux 安装部署图：消费者→CMake package→共享库→非 ROS 依赖，描述构建/运行边界。 | 确认需修 | 未整改 | 确认：HLD §9 叙述安装约束，但无消费端/CMake package/.so/依赖的部署视图。 |
-| R2-HLD-03 | `docs/HLD.md`、`docs/LLD.md` | 建议 | HLD 的浮点/容差风险缓解必须指向 LLD 确定数值；禁止将“LLD 会定义”误报为已落实。 | 确认需修 | 未整改 | 确认：HLD §11 浮点风险指向 LLD 容差，但 LLD §2.4 仍待定、§7 使用建议字样。 |
-| R2-HLD-04 | `docs/HLD.md`、`docs/SRS.md` | 建议 | 明确 NFR-02 目前未正式验收，只保留可测量能力；与 SRS 延期状态一致。 | 现状已满足 | 已整改 | 已核验无需修改：HLD §10 NFR-02 明确正式性能验收延期非当前门槛；SRS §8 同口径。 |
-| R2-LLD-01 | `docs/LLD.md` | 必须 | 消除 SO(3)、单位法向、四元数、求交平行/边界容差的“建议固定”“测试计划确定”；给出明确数值、单位、边界策略及可执行判定。 | 确认需修 | 未整改 | 确认：LLD §2.4 “SO(3) 容差按测试计划确定”；§7 “建议固定容差”；单位轴/四元数缺冻结值。 |
-| R2-LLD-02 | `docs/LLD.md` | 必须 | YAML baseline 一律先于 events；timestamp_ns=0 的事件按 YAML 数组顺序应用，明确 insertion_order 与覆盖关系。 | 确认需修 | 未整改 | 确认：LLD §9.1 baseline 在 0 生效，但未确定与 t=0 events 的先后和序号。 |
-| R2-LLD-03 | `docs/LLD.md` | 建议 | 冻结 Raycast 整体失败与逐条 InvalidBearing、OutsideFov、NoIntersection、CameraNotFound 等码的优先级和映射。 | 确认需修 | 未整改 | 确认：LLD §7 未明示整批 CameraNotFound 与单条 InvalidBearing/OutsideFov/NoIntersection 优先级。 |
-| R2-LLD-04 | `docs/LLD.md` | 建议 | 在 std::bad_alloc 之外明确 OpenCV/Eigen/yaml-cpp 等第三方异常的统一翻译规则及配置/Generate 的强异常保证。 | 确认需修 | 未整改 | 部分确认：LLD §2.1 有 InternalError/强异常保证，但未逐类规定 OpenCV/yaml-cpp/其他第三方异常的翻译和原子性。 |
-| R2-LLD-05 | `docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 建议 | 冻结 IMU 白噪与随机游走 99% 卡方检验的样本量、自由度、种子数量、计算公式与阈值；不把原理叙述当验收规则。 | 确认需修 | 未整改 | 确认：LLD §6.2 仅声明 99% 卡方，缺固定 n、ν、种子、双侧阈值及白噪/RW 独立隔离设计。 |
-| R2-LLD-06 | `docs/LLD.md`、`docs/SRS.md` | 建议 | GetChangeHistory API 是否具有 from_ns/to_ns 范围重载须与 SRS 外部接口保持一致。 | 确认需修 | 未整改 | 确认：LLD §2 API 有 GetChangeHistory()，无时间范围重载；SRS §6 允许事件范围。 |
-| R2-PLAN-01 | `docs/IMPLEMENTATION_PLAN.md`、`docs/LLD.md` | 必须 | P0 “冻结 event API”与 LLD“v1 冻结合同”不能同时成立；改复核 v1 与 HEAD 差异，变更走版本升级与同步文档。 | 确认需修 | 未整改 | 确认：PLAN §4 P0 行写“冻结 event API 合同”，与 LLD §2“设计基线 v1”冲突。 |
-| R2-PLAN-02 | `docs/IMPLEMENTATION_PLAN.md`、`docs/AUDIT.md`、`docs/AUDIT_PROGRESS.md` | 建议 | 计划对 AUDIT 文档的引用必须可访问；明确缺失时的回退基线，现仓库已有审计文档须保持链接有效。 | 确认需修 | 未整改 | 部分确认：AUDIT.md / AUDIT_PROGRESS.md 现已存在且链接有效；PLAN §1–2 未提供缺失/不可用情况下的 P0 回退依据。 |
-| R2-PLAN-03 | `docs/IMPLEMENTATION_PLAN.md`、`docs/LLD.md` | 建议 | V06 拆分/标注“确定性逐元素重放”和“99% 噪声统计检验”，引用冻结后的参数。 | 确认需修 | 未整改 | 确认：PLAN §6 V06 将固定种子重放和统计检验合并，且引用未冻结参数。 |
-| R2-PLAN-04 | `docs/IMPLEMENTATION_PLAN.md` | 建议 | 补可操作的 ctest 测试列表、Windows 配置负例、ROS 依赖扫描 ldd/readelf 的模板，不声称已执行。 | 确认需修 | 未整改 | 确认：PLAN §9 有 cmake/ctest/安装命令，但缺 ctest -N、Windows 负例命令、实际 ldd/readelf/grep。 |
-| R2-X-01 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 必须 | 统一设计状态标签（拟议/冻结/待实施/待审计）及 P0 工作定义，勿把未冻结口径或未执行的测试标为已通过。 | 确认需修 | 未整改 | 确认：HLD 文首“设计提案”，LLD §2“设计基线 v1”；PLAN P0 冻结用语不一致。 |
-| R2-X-02 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 建议 | 复扫 FR/AC→LLD→V→P、冻结容差/NFR 延期和业务边界；保留无 ROS、Room-only、即时模式、动态相机、无历史结果缓存等已决定约束。 | 确认需修 | 未整改 | 确认需联动复扫：FR-M 圆周与 LLD 不符、统计验收不闭环；其余核心边界目前无明显回退。 |
+| R2-SRS-01 | `docs/SRS.md`、`docs/LLD.md` | 必须 | 统一圆周运动“圆心/半径/轨道平面/相位”需求与 LinearUniformCircular 接口：采用显式圆心+相位及冲突规则，或将需求明确为相对半径/方向隐式表达。 | 整改后复核通过 | 已整改 | SRS §2 FR-M01/04 保留显式世界圆心/相位及连续性要求；LLD §2 LinearUniformCircular 新字段/恢复策略、§4.2/§4.3 一致性、§9.1 YAML 字段。 |
+| R2-SRS-02 | `docs/SRS.md`、`docs/LLD.md` | 建议 | SRS §6 历史查询的“可选事件范围”与 LLD 无参 GetChangeHistory 不一致；增加区间重载或删去能力。 | 整改后复核通过 | 已整改 | SRS §6 历史闭区间；LLD §2 GetChangeHistory(from_ns,to_ns) 和 §3.3 闭区间行为。 |
+| R2-SRS-03 | `docs/SRS.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 建议 | AC-06 噪声统计必须对应 LLD 实际冻结的样本量、自由度、独立种子数、统计判定区间和可执行测试。 | 整改后复核通过 | 已整改 | SRS §9 AC-06；LLD §6.2 固定 8 种子、每组 n=98304/ν=98303 及 99% 分位阈值；PLAN §6 V06-D/S。 |
+| R2-SRS-04 | `docs/SRS.md` | 建议 | NFR-02 明确标注“延期验收项/当前非阻断”，不误写为已验证。 | 现状已满足/复核通过 | 已整改 | 现状已符合：SRS §8 NFR-02 和 §9 AC-11 已明确性能延期，保留原文不重复改。 |
+| R2-HLD-01 | `docs/HLD.md` | 建议 | 补运行时交互图：事件提交→EventTimeline、Generate→Evaluate→Renderer/IMU→事务提交、Raycast→Evaluate→Room。 | 整改后复核通过 | 已整改 | HLD §3.1 事件提交→Generate→Evaluate→相机/IMU→原子提交时序；§3.2 Raycast→Evaluate→Room 时序。 |
+| R2-HLD-02 | `docs/HLD.md` | 建议 | 补 Linux 安装部署图：消费者→CMake package→共享库→非 ROS 依赖，描述构建/运行边界。 | 整改后复核通过 | 已整改 | HLD §9.2 Mermaid Linux 部署视图：消费者、CMake package、libvisualsim.so、非 ROS 依赖。 |
+| R2-HLD-03 | `docs/HLD.md`、`docs/LLD.md` | 建议 | HLD 的浮点/容差风险缓解必须指向 LLD 确定数值；禁止将“LLD 会定义”误报为已落实。 | 整改后复核通过 | 已整改 | HLD §11 浮点风险直接引用 LLD §2.4 SO(3)/四元数数值、§7 固定求交容差；PLAN V04/V08。 |
+| R2-HLD-04 | `docs/HLD.md`、`docs/SRS.md` | 建议 | 明确 NFR-02 目前未正式验收，只保留可测量能力；与 SRS 延期状态一致。 | 现状已满足/复核通过 | 已整改 | 现状已符合：HLD §10 NFR-02 已注明正式性能验收延期，SRS §8 对应。无需改。 |
+| R2-LLD-01 | `docs/LLD.md` | 必须 | 消除 SO(3)、单位法向、四元数、求交平行/边界容差的“建议固定”“测试计划确定”；给出明确数值、单位、边界策略及可执行判定。 | 整改后复核通过 | 已整改 | LLD §2.4 冻结 SO(3) 1e-10、四元数 1e-10、单位向量 1e-9、圆周正交/位置相容及 Room 尺寸容差；§7 删除“建议固定”。 |
+| R2-LLD-02 | `docs/LLD.md` | 必须 | YAML baseline 一律先于 events；timestamp_ns=0 的事件按 YAML 数组顺序应用，明确 insertion_order 与覆盖关系。 | 整改后复核通过 | 已整改 | LLD §9.1：内建默认值→baseline room/pose/imu→events，同 t=0 事件按数组顺序且覆盖 baseline；显式 baseline 字段合成 t=0 历史记录。 |
+| R2-LLD-03 | `docs/LLD.md` | 建议 | 冻结 Raycast 整体失败与逐条 InvalidBearing、OutsideFov、NoIntersection、CameraNotFound 等码的优先级和映射。 | 整改后复核通过 | 已整改 | LLD §7 Raycast 失败优先级表：全局 TimeOutOfRange/CameraNotFound/NoCameraAtTime，逐条 InvalidBearing/OutsideFov/NoIntersection/Ok。 |
+| R2-LLD-04 | `docs/LLD.md` | 建议 | 在 std::bad_alloc 之外明确 OpenCV/Eigen/yaml-cpp 等第三方异常的统一翻译规则及配置/Generate 的强异常保证。 | 整改后复核通过 | 已整改 | LLD §2.1：yaml-cpp/IO→InvalidConfigSchema、cv::Exception/其他第三方→InternalError；std::bad_alloc 边界、Eigen 前置校验、setter/Generate 强保证。 |
+| R2-LLD-05 | `docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 建议 | 冻结 IMU 白噪与随机游走 99% 卡方检验的样本量、自由度、种子数量、计算公式与阈值；不把原理叙述当验收规则。 | 整改后复核通过 | 已整改 | LLD §6.2：8 种子×3 轴×4096，ν=98303，99% χ² 双侧 [97164.6270,99448.8862]，白噪与随机游走隔离；PLAN V06-S。 |
+| R2-LLD-06 | `docs/LLD.md`、`docs/SRS.md` | 建议 | GetChangeHistory API 是否具有 from_ns/to_ns 范围重载须与 SRS 外部接口保持一致。 | 整改后复核通过 | 已整改 | LLD §2 签名新增 GetChangeHistory(from_ns,to_ns)；§3.3 明确闭区间和非法范围；SRS §6 对齐。 |
+| R2-PLAN-01 | `docs/IMPLEMENTATION_PLAN.md`、`docs/LLD.md` | 必须 | P0 “冻结 event API”与 LLD“v1 冻结合同”不能同时成立；改复核 v1 与 HEAD 差异，变更走版本升级与同步文档。 | 整改后复核通过 | 已整改 | PLAN §4 P0 改为复核已冻结 LLD v1 与两仓库源码，破坏性变更升版本且同步四文档；LLD §2 保持 v1 基线。 |
+| R2-PLAN-02 | `docs/IMPLEMENTATION_PLAN.md`、`docs/AUDIT.md`、`docs/AUDIT_PROGRESS.md` | 建议 | 计划对 AUDIT 文档的引用必须可访问；明确缺失时的回退基线，现仓库已有审计文档须保持链接有效。 | 整改后复核通过 | 已整改 | PLAN §2 实际 AUDIT/AUDIT_PROGRESS 链接存在；写明文件缺失/不可用时用四设计文档和双方 HEAD 作临时基线，先恢复审计记录。 |
+| R2-PLAN-03 | `docs/IMPLEMENTATION_PLAN.md`、`docs/LLD.md` | 建议 | V06 拆分/标注“确定性逐元素重放”和“99% 噪声统计检验”，引用冻结后的参数。 | 整改后复核通过 | 已整改 | PLAN §6 V06-D/V06-S 单独列出，§7 P3、§8 FR-S02/NFR-07 矩阵同步，参照 LLD 冻结统计参数。 |
+| R2-PLAN-04 | `docs/IMPLEMENTATION_PLAN.md` | 建议 | 补可操作的 ctest 测试列表、Windows 配置负例、ROS 依赖扫描 ldd/readelf 的模板，不声称已执行。 | 整改后复核通过 | 已整改 | PLAN §9 添加 ctest -N、具体 ldd/readelf/ROS grep 操作、Windows PowerShell cmake 负例；均明确仅后续实施执行。 |
+| R2-X-01 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 必须 | 统一设计状态标签（拟议/冻结/待实施/待审计）及 P0 工作定义，勿把未冻结口径或未执行的测试标为已通过。 | 整改后复核通过 | 已整改 | HLD、LLD、PLAN 页首统一 v1 设计基线、待实施/待验证；PLAN P0 不再声称重新冻结；SRS 为产品需求基线。 |
+| R2-X-02 | `docs/SRS.md`、`docs/HLD.md`、`docs/LLD.md`、`docs/IMPLEMENTATION_PLAN.md` | 建议 | 复扫 FR/AC→LLD→V→P、冻结容差/NFR 延期和业务边界；保留无 ROS、Room-only、即时模式、动态相机、无历史结果缓存等已决定约束。 | 整改后复核通过 | 已整改 | 交叉核验 SRS §2/§6/§9、HLD §3/§9/§11、LLD §2/§4/§6/§7/§9、PLAN §4/§6/§8/§9；关键业务边界保留且 NFR-02 仍延期。 |
 
 ### 8.3 登记时的初始统计与基线
 
@@ -184,3 +184,27 @@
 - 本轮审计基线：登记后的 HEAD `6b69edfd3baba149ee03a3d608b7d2a1d94f2ae9`；业务内容对应登记前 `5483311742e955387a2ef9054b1a9263d824d2db`。
 - 文档现有亮点保留：SRS 分层/术语/NFR/追踪索引，HLD 组件与风险表，LLD API/错误/ABI/YAML/确定性随机算法，PLAN P0–P6/风险/追踪矩阵。
 - 此次仅核验 Markdown 内容，**未编译、运行、测试仿真，也未编辑来源仓库**。下阶段对问题整改并复扫。
+
+### 8.5 本轮整改与交叉复扫结论（最终）
+
+| 指标 | 本轮结果 | 说明 |
+| --- | --- | --- |
+| 审计文件 | **4/4 已审计** | SRS、HLD、LLD、IMPLEMENTATION_PLAN |
+| 用户意见核验 | **20/20** | 每项均已记录实情及具体文档位置 |
+| 确认需要文档整改并已修复 | **18/18** | 包含 4 项必须修 |
+| 现状已符合且无需更改 | **2/2** | R2-SRS-04、R2-HLD-04 |
+| 本轮整改闭环 | **20/20（100%）** | 仅表示文档整改闭环，**不是源码完成/构建测试通过** |
+| 未整改 / 整改中 / 待人类决策 | **0 / 0 / 0** | 已有业务决定足以完成本轮文档整改 |
+| 性能延期 | PERF-01 继续延期 | 首次成功运行并生成有效数据后再决定正式性能指标与验收 |
+
+**四项必须修复项均已关闭：** R2-SRS-01（显式圆心/相位与 API 同步）、R2-LLD-02（baseline/events 在 t=0 的唯一顺序）、R2-LLD-01（SO(3)/法向/四元数/求交容差均冻结）、R2-PLAN-01（P0 仅复核 v1 并以版本升级处理合同变更）。
+
+**跨文档复扫**：SRS 无源码迁移表，HLD 有运行时交互/部署视图，LLD 不再存在“建议固定容差”“SO(3) 容差按测试计划确定”等未冻结措辞；圆周配置在 SRS、LLD API/YAML、PLAN V04 之间同义；时间区间历史查询在 SRS/LLD 一致；NFR-02/V12 延期状态在 SRS/HLD/LLD/PLAN 一致；V06-D/V06-S 在 PLAN 测试表与追踪矩阵一致；核心需求“Ubuntu 24.04、无 ROS、Windows 禁止、Room only、0..N 相机、纳秒 int64、禁止历史结果缓存、严禁重复传感器时间”保持不变。
+
+**相关提交（顺序）**：
+1. `6b69edfd3baba149ee03a3d608b7d2a1d94f2ae9` — 本轮目标先登记（先于审计）。
+2. `7181dec38dea9c80361939db6606412961bfb983` — 4/4 正式审计、问题实际定位。
+3. `b11d7b63a9a986c8423d5c6759013972a1db37ce` — 4 份正文的文档整改。
+4. 本进度文件的最终结案提交见 GitHub 最新提交历史。
+
+**尚未执行**：任何生产代码修改、构建、CTest、单元/数值试验、真实性能验收。**结论只针对文档合同一致性和可追溯性**；后续首次代码实现、验收及性能延期按计划单独记录。
