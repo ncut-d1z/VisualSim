@@ -1,6 +1,6 @@
 # VisualSim 文档审计进度（AUDIT_PROGRESS）
 
-> 当前轮次：**Round 5 已完成：A31–A34 共 4/4 项已整改**，累计 A01–A34 **34/34 闭环**。实施计划现含 46 组真实旧片段与拟议新代码对照，另有 8 组新内核骨架；**没有修改生产代码、没有执行 CMake/CTest 或功能验收**。
+> 当前轮次：**Round 6 已完成，A35–A38 共 4/4 项已整改**；累计 A01–A38 **38/38 闭环**。用户前后两轮执行结果 E001–E016 已归档至 [BUILD_ENVIRONMENT.md](BUILD_ENVIRONMENT.md)；**未执行生产代码迁移、编译或 CTest**。
 >
 > 审计依据：[AUDIT.md](AUDIT.md)；文档对象：SRS.md、HLD.md、LLD.md、IMPLEMENTATION_PLAN.md；仅允许修改 ncut-d1z/VisualSim 的 docs 文档。来源 ncut-d1z/ros2-vio-node 禁止写入。
 >
@@ -253,3 +253,18 @@
 | A38 | docs/AUDIT_PROGRESS.md | 保存登记、提交、复核和最终状态 | 未整改 |
 
 初始统计：Round 6 已整改 0、未整改/待核查 4。历史 A01–A34 34/34 已闭环，且本轮不修改生产 C++/CMake/源码。
+
+### 10.1 Round 6 最终状态（登记快照保留）
+
+| 目标 | 终态 | 证据 |
+| --- | --- | --- |
+| A35 | 已整改 | `docs/BUILD_ENVIRONMENT.md` 的 E001–E016 共 16 条含命令/输出，保留首次失败 find 和修正成功搜索 |
+| A36 | 已整改 | 文件 §1、§6 规定 E017 以后“待执行→已反馈→已核查”连续编号及只追加修改原则 |
+| A37 | 已整改 | PLAN §3.11、§7.2 新增对专用文件的引用，摘要/建议命令与实机取证严格区分 |
+| A38 | 已整改 | 先行登记 commit `abd104784507625603dea9e063852dc9d15002da`；内容提交 `f96a6143669c39cfd566e93cb241a9fd5946437d`；本段复核归档 |
+
+**本轮核对**：独立环境档案 1 份；既有命令条目 E001–E016 均已登记；原始用户输出包含版本、Sophus/Opencv/Eigen Config 路径、ldconfig、GLIBCXX 与 Bash 失败文本；PLAN 两处链接建立；未改变 SRS/HLD/LLD v1 合同或生产文件。
+
+**本轮统计**：审计对象 3 份（BUILD_ENVIRONMENT、IMPLEMENTATION_PLAN、AUDIT/AUDIT_PROGRESS 作为一组治理记录），已审计 3/3；A35–A38 已整改 4/4、无需整改 0、未整改 0。累计 A01–A38 已整改 38/38。
+
+**工程状态**：只完成文档取证，尚未运行 CMake、编译、CTest、安装/消费者程序或性能测试；P0–P6 仍待实际实施。
