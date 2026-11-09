@@ -106,16 +106,16 @@
 
 ### 3.6 构建配置/脚本清单（非头/源文件）
 
-| 仓库 | 路径 | 未来处理 |
-| --- | --- | --- |
-| 目标 | `CMakeLists.txt` | **改写**为 Linux-only、可安装 SHARED 库、配置化 CLI、单元测试及独立消费者；不降低 CMake/GCC |
-| 目标 | `CMakePresets.json` | **重写/移除 Windows preset**，按需保留 Linux preset |
-| 目标 | `build.ps1`, `run.ps1`, `clean.ps1` | **删除/禁用** Windows 专用脚本 |
-| 目标 | `vcpkg.json` | 按 Linux 依赖安装策略决定是否保留 manifest；**不得维持有效 Windows 构建路径** |
-| 目标 | `README.md` | 更新编译、安装、传感器 API、配置示例、数据导出和 Linux-only 说明 |
-| 来源只读 | `CMakeLists.txt` | ROS/ament/common_pch 主工程，**不迁入** |
-| 来源只读 | `src/VisualSim/CMakeLists.txt` | standalone C++23 但带 CameraIO/FFmpeg 和 Windows 兼容分支，**不迁入** |
-| 来源只读 | `src/CameraIO/CMakeLists.txt` | 静态 camera_frame_io 与 libav 必需依赖，**不迁入** |
+| 仓库 | 分支 | 路径 | 未来处理 |
+| --- | --- | --- | --- |
+| VisualSim | main | `CMakeLists.txt` | **改写**为 Linux-only、可安装 SHARED 库、配置化 CLI、单元测试及独立消费者；不降低 CMake/GCC |
+| VisualSim | main | `CMakePresets.json` | **重写/移除 Windows preset**，按需保留 Linux preset |
+| VisualSim | main | `build.ps1`, `run.ps1`, `clean.ps1` | **删除/禁用** Windows 专用脚本 |
+| VisualSim | main | `vcpkg.json` | 按 Linux 依赖安装策略决定是否保留 manifest；**不得维持有效 Windows 构建路径** |
+| VisualSim | main | `README.md` | 更新编译、安装、传感器 API、配置示例、数据导出和 Linux-only 说明 |
+| ros2-vio-node | ftr-eskf | `CMakeLists.txt` | ROS/ament/common_pch 主工程，**不迁入** |
+| ros2-vio-node | ftr-eskf | `src/VisualSim/CMakeLists.txt` | standalone C++23 但带 CameraIO/FFmpeg 和 Windows 兼容分支，**不迁入** |
+| ros2-vio-node | ftr-eskf | `src/CameraIO/CMakeLists.txt` | 静态 camera_frame_io 与 libav 必需依赖，**不迁入** |
 
 **合规范围**：只修改目标仓库；以上文件的未来处置是**实施计划**，并非本轮已经修改源码。根目录构建支持脚本不算入上述 38 个头/源清点数。
 
@@ -134,6 +134,342 @@
 | 配置文件驱动 CLI、保留 PNG/CSV、无隐式写盘 | 两条内置场景、启动自动输出且会 remove_all | CLI 含 FFV1、Stress 和隐式输出，摄像机帧通过 CameraIO | P6 薄 CLI+配置输入；仅显式导出；保持 CV_8UC1、PNG/CSV，不删除目录 |
 
 **判定**：现行计划的产品目标与 SRS/HLD/LLD 相符，但其原 §1 来源分支、原 §3 源码迁移清单与真实 ftr-eskf **不一致**；本轮修订后二者在**文件范围、迁移/排除决定和工具链来源**上具备静态对齐的执行依据。**并不意味着目标代码已经满足任何新 v1 API 或通过 P0–P6 实施验收**。
+
+### 3.8 逐文件实施细则（与 §3.1–§3.3 原表一一对应）
+
+本节是 **P0–P6 将要执行的修改要求**，不是已实现的生产代码。F01–F38 按原清单次序对应：目标 4、来源 VisualSim 15、相关 CameraIO 和引用依赖 19。标明的建议新文件路径只是工程组织提案，不改变 LLD v1 已冻结公共 API。**排除项的约束是不得进入目标编译、公开头、链接依赖闭包，不是仅不复制同名文件。**
+
+#### 3.8.1 VisualSim/main 现存头/源/测试 F01–F04
+
+##### F01 VisualSim/main/src/Room.hpp
+
+- **具体处理**：保留 visualsim::Room、六面网格排序去重、Points()；吸收来源动态 depth/width/height 与有限正数、网格段数校验；保留目标接口并扩展按时刻 RoomConfig。
+- **目标或排除**：在 Room 几何服务中增加六个有限连续面、面 ID、有效边界；渲染棋盘网格与 Raycast 使用同一几何，不以网格顶点替代真值、不跨调用缓存求交。
+- **验证**：目标仍为 src/Room.hpp，按需要分出内部 src/Room.cpp；V08 检验非默认尺寸、六面及边角交点。
+
+##### F02 VisualSim/main/src/Trajectory.hpp
+
+- **具体处理**：保留已有 ForwardConstantVelocity 的解析位移和 OpticalAxisConstantRotation 的 SO(3) 指数规律，替换唯一轨迹对象与静默 clampTime 行为。
+- **目标或排除**：按 LLD v1 建立四个线运动模式、两个角运动模式、MotionState 六项真值；以事件时刻先累计旧段，再应用覆盖/BeginMotionMode/EndMotionEnd、圆周重激活策略和右侧导数。
+- **验证**：公开定义建议置于 include/visualsim/Trajectory.hpp，src/Trajectory.hpp 作为内部桥接；V02–V04 检验历史重算、圆周一致性及非零角加速度拒绝。
+
+##### F03 VisualSim/main/src/main.cpp
+
+- **具体处理**：从硬编码的前向匀速/光轴旋转及三深度离散场景，改为显式读取用户 YAML 事件/采样时间、调用公共 Simulator，场景唯一 Room。
+- **目标或排除**：把 Render、IMU、WriteSensorYaml/Imu、WriteGroundTruthHeader、WriteMotionYaml、GenerateDataset 拆到库内部 Renderer、ImuModel、DatasetExporter；不在 main 重复维护数学。
+- **验证**：CLI 仅显式导出 PNG/CSV/YAML、支持 N 相机及真实纳秒；移除自动 remove_all 和启动即写盘；V01/V10 验证。
+
+##### F04 VisualSim/main/tests/TrajectoryTests.cpp
+
+- **具体处理**：保留解析位移、固定朝向、轴角纯旋转、Room 网格等已有有效断言，改用冻结的公开事件 API，不为测试保留硬编码轨迹入口。
+- **目标或排除**：增加类内覆盖/跨类组合、嵌套作用域、相位/圆心恢复、事件时间与不连续边界、可查询历史的用例；按需要拆成 MotionHistoryTests 与 RoomTests。
+- **验证**：V02/V03/V04/V08 负责验收，测试应与真实库链接而非直接复制核心源码。
+
+#### 3.8.2 ros2-vio-node/ftr-eskf 的 VisualSim 头/源 F05–F19
+
+##### F05 ros2-vio-node/ftr-eskf/src/VisualSim/Camera.hpp
+
+- **具体处理**：来源 Camera::sensor_from_body_ 是 T_SB（B→C），冻结 API 使用 T_BC（C→B）；不能原样复制变换或固定 fx=fy=450 的默认内参。
+- **目标或排除**：提取 K/投影/视域逻辑到 include/visualsim/Calibration.hpp 与 src/CameraRenderer.cpp；按 T_BC 取逆、实现独立各相机的 k1/k2/p1/p2 真实畸变及 LLD 默认 K。
+- **验证**：V05/V06-D 用非平凡外参、多相机不同 K 和非零畸变核对像素/世界坐标。
+
+##### F06 ros2-vio-node/ftr-eskf/src/VisualSim/ErrorEvaluation.hpp
+
+- **具体处理**：估计误差评估依赖 DatumTruth，非本产品的仿真物理或图像生成接口；不复制其类、编译单元或加载链。
+- **目标或排除**：如果需要比较真值，把姿态/轨迹差异仅写在目标 tests 的断言中，不能让 Simulator 链接估计器评估代码。
+- **验证**：验收：目标公开 include、CMake target 和运行依赖均不含 ErrorEvaluation/DatumTruth。
+
+##### F07 ros2-vio-node/ftr-eskf/src/VisualSim/EvoSim3.hpp
+
+- **具体处理**：已有真值/估计结果加载，引用 AbstractLoader/反射；不是基于调用者事件/配置定义运动的 API。
+- **目标或排除**：明确不纳入目标，不能把反射式加载器变成 v1 事件来源；替代路径是 LLD §9.1 的 LoadMotionConfig（只允许新实例）和时间戳即时式 API。
+- **验证**：V02 确认 YAML baseline→events 与函数调用一致；目标无 EvoSim3 依赖。
+
+##### F08 ros2-vio-node/ftr-eskf/src/VisualSim/ImuNoiseModel.cpp
+
+- **具体处理**：这是另带 main() 的离线 CSV 加噪程序，读写先前生成的 IMU 序列，不属于按时刻直接生成传感器数据的库。
+- **目标或排除**：不把该源文件/离线工具编进目标，不允许借此在 Generate 后隐式改写文件；噪声只能在新 ImuModel 的单次计算里数值生效。
+- **验证**：V06-D/S 验证噪声，V10 检查无隐式写盘与额外可执行入口。
+
+##### F09 ros2-vio-node/ftr-eskf/src/VisualSim/ImuNoiseModel.hpp
+
+- **具体处理**：来源持有 mt19937、normal_distribution、gyro_bias_/accel_bias_ 并按固定 sqrt_rate 顺序推进，与 LLD §6.2 的按纳秒重算、无历史偏置缓存不兼容。
+- **目标或排除**：只借鉴连续白噪声 N/√Δt 和偏置游走 K√Δt 的物理密度含义；在 src/ImuModel.cpp 重新实现 seed/epoch/整数时刻键控高斯与 Brownian-bridge。
+- **验证**：禁止复制 Corrupt() 有状态时间序列；V06-D 固定种子重放、V06-S 四组 99% 卡方检验。
+
+##### F10 ros2-vio-node/ftr-eskf/src/VisualSim/LinearKalmanFilter.hpp
+
+- **具体处理**：OpenCV 的滤波/跟踪辅助组件，不是 Room 渲染、IMU 真值或真实交点求解；不纳入共享库。
+- **目标或排除**：不得在生成像素或 Raycast 后附加“滤波真值”步骤，也不通过依赖关系导入 OpenCV video/tracking 估计模块。
+- **验证**：V01 检查最终 CMake 依赖；V08 比对未经估计器修正的解析真值。
+
+##### F11 ros2-vio-node/ftr-eskf/src/VisualSim/MeshPlot.hpp
+
+- **具体处理**：来源按固定左右目共同可见网格绘制黑白三角面，且调用 namedWindow、imshow、destroyAllWindows；不能原样用在无 GUI 的 N 相机库。
+- **目标或排除**：提取六面棋盘纹理规则到 src/RoomRenderer.cpp 或 CameraRenderer.cpp；逐相机 CV_8UC1 离屏渲染、按各自 K/畸变投影并处理近裁剪面和部分可见面。
+- **验证**：图像遮挡与 Room 首次求交一致，无 GUI 生命周期副作用；V05/V08/V10。
+
+##### F12 ros2-vio-node/ftr-eskf/src/VisualSim/Path.hpp
+
+- **具体处理**：PathStationary/Acceleration/Circle 含有可复用解析式，但 PathManager 按浮点秒排队且圆周朝向和线运动相耦合。
+- **目标或排除**：只吸收解析运动公式到新双类别模式/事件解释器，不复制 PathManager；圆周位置与相机朝向独立，段边界先积分旧规律再切换，支持栈恢复。
+- **验证**：F02 与本文件共同覆盖 V03/V04，保证六项真值、右侧导数、同刻操作次序。
+
+##### F13 ros2-vio-node/ftr-eskf/src/VisualSim/Preintegrate.hpp
+
+- **具体处理**：引用 DatumImu 的惯性预积分，用于里程计/状态估计，非真实 IMU 测量生成。
+- **目标或排除**：不纳入运行时库或其测试；目标 ImuMeasurement 只含三轴角速度/比力，不暴露滤波预积分状态。
+- **验证**：V01 依赖核验：无 Preintegrate/DatumImu。
+
+##### F14 ros2-vio-node/ftr-eskf/src/VisualSim/Room.hpp
+
+- **具体处理**：该版可配置房间尺寸、按有限正数检验、维护 GetIndex；但带 stderr 构造打印，目标 Room 已有 Points() 与 visualsim 命名空间。
+- **目标或排除**：合并进目标 src/Room.hpp 而不是保留两份类；保留必要网格索引、去重，删除自动日志，补连续六面与动态 RoomConfig，按事件时刻取值。
+- **验证**：V08 验证不同房间尺度、退化参数拒绝、六面命中，且无跨调用几何结果缓存。
+
+##### F15 ros2-vio-node/ftr-eskf/src/VisualSim/StereoRig.hpp
+
+- **具体处理**：固定 camera_left_/camera_right_ 与两目公共可见索引交集，无法表达任意 0..N 相机及单目可见点。
+- **目标或排除**：重写为稳定 SensorId 的 CameraRegistry；按时刻注册/改名、每台各自渲染，camera gate 一次包含所有当时存在相机。
+- **验证**：默认虚拟 cam0 外参 (I,0)、自动 camX、改名不重置帧编号；V05/V07。
+
+##### F16 ros2-vio-node/ftr-eskf/src/VisualSim/StressModel.hpp
+
+- **具体处理**：额外 PixelStress 像素离群模型、脉冲线/角运动中含非零角加速度，与冻结 v1 仅有定轴匀速角模式相冲突。
+- **目标或排除**：严格排除；不借旧 StressMotion 新增隐藏模式，也不能让压力噪声改变 Room 真实交点。
+- **验证**：日后若扩充需要先升级 SRS/LLD；当前 V03/V04 模式枚举无 Stress。
+
+##### F17 ros2-vio-node/ftr-eskf/src/VisualSim/StressTests.cpp
+
+- **具体处理**：只验证被排除的 StressModel/PixelStress 与脉冲运动，不应作为 v1 新功能测试直接复制。
+- **目标或排除**：有限差分和固定种子测试思想可在新的 MotionHistoryTests/ImuTests 中重写，且只针对合法 v1 模式。
+- **验证**：目标测试构建不得链接 StressModel；V04/V06-D。
+
+##### F18 ros2-vio-node/ftr-eskf/src/VisualSim/VisualInertial.cpp
+
+- **具体处理**：含 rclcpp、ESKF、ZUPT、Datum/状态估计与 ROS 数据处理，即使路径在 src/VisualSim 中也不属于仿真运行库。
+- **目标或排除**：不复制文件、include 或 ROS 目标；与之相关的 ROS 依赖和估计器数据结构均必须从目标 public API/编译链中排除。
+- **验证**：V01 检查 ROS/ament/cv_bridge/rosidl 无直接或传递链接。
+
+##### F19 ros2-vio-node/ftr-eskf/src/VisualSim/VisualSim.cpp
+
+- **具体处理**：含 Room 双目渲染、IMU 理想比力、CSV/YAML、固定采样比与 main；同时耦合 Stress、ImuNoiseModel、CameraFrameWriter 和 remove_all。
+- **目标或排除**：按职责分解到建议的 src/Simulator.cpp、CameraRenderer.cpp、ImuModel.cpp、DatasetExporter.cpp；只参考物理式与数据组织，不复制 main/宏/自动文件删除。
+- **验证**：改为输入原始 TimestampNs、0..N 相机、事务性门控、无结果缓存；V05–V11。
+
+#### 3.8.3 ros2-vio-node/ftr-eskf 的 CameraIO 与依赖 F20–F38
+
+##### F20 ros2-vio-node/ftr-eskf/src/CameraIO/CameraFrameReader.cpp
+
+- **具体处理**：读取既有 data.csv/PNG/FFV1 与视频时间索引，和按需仿真生成不同；不纳入目标。
+- **目标或排除**：保留 CSV 的权威时间是整数 timestamp_ns 这一测试思想，不引入图像回放或 FFV1Decoder。
+- **验证**：V10 的新导出测试独立解码刚生成的 PNG。
+
+##### F21 ros2-vio-node/ftr-eskf/src/CameraIO/CameraFrameWriter.cpp
+
+- **具体处理**：参考 ImageSequenceWriter 的 PNG 命名和 CSV 索引写入顺序，但不复制 FFV1 VideoWriter。
+- **目标或排除**：在 src/DatasetExporter.cpp 重新实现显式输出目录与每个相机单独数据文件、真实 int64 时间；禁止在 Generate 内写盘或覆盖已有文件。
+- **验证**：V10 核查 PNG 读取、CSV 顺序、N 相机、错误时无半写。
+
+##### F22 ros2-vio-node/ftr-eskf/src/CameraIO/FFV1Video.hpp
+
+- **具体处理**：FFV1Encoder/Decoder 属于视频扩展，不是 v1 可安装 API 的必需组成。
+- **目标或排除**：排除头与公开依赖，防止安装树要求 FFmpeg 和视频帧格式。
+- **验证**：V01 检查导出头/链接中无 FFV1Video。
+
+##### F23 ros2-vio-node/ftr-eskf/src/CameraIO/FFV1Video.cpp
+
+- **具体处理**：依赖 libavcodec/libavformat/libavutil，写入 FFV1 需要 CV_8UC3/BGR0，与冻结 CV_8UC1 不一致。
+- **目标或排除**：不迁移到 libvisualsim.so、CLI 或默认测试；如需视频须单独升版并设可选插件。
+- **验证**：V01 ELF NEEDED 不因本模块出现强制 libav 依赖。
+
+##### F24 ros2-vio-node/ftr-eskf/src/CameraIO/CameraFrameIOTests.cpp
+
+- **具体处理**：现有测试覆盖 PNG/CSV 和 FFV1/VisualSlam 读写，不适合原样复制。
+- **目标或排除**：提取 timestamp_ns 索引、空/损坏文件、PNG 可读性断言到目标 tests/ExportTests.cpp；去掉 FFmpeg/VisualSlam 部分。
+- **验证**：V10 测像素值、格式和目录覆盖失败。
+
+##### F25 ros2-vio-node/ftr-eskf/include/euroc_vio/CameraFrameIO.hpp
+
+- **具体处理**：同时暴露 Images/Video Writer/Reader、索引与视频模式，不应替代 Simulator 的纯内存传感器帧。
+- **目标或排除**：参考按纳秒写入契约，在目标建议的 include/visualsim/DatasetExporter.hpp 只公开用户授权的 PNG/CSV 导出；不提供 FFV1/Reader。
+- **验证**：V01/V10 检查 API/写盘时机与内存所有权。
+
+##### F26 ros2-vio-node/ftr-eskf/include/euroc_vio/AbstractLoader.hpp
+
+- **具体处理**：来源 CSV 加载基类，是 EvoSim3/Datum* 的附属工具。
+- **目标或排除**：不复制，不用该加载器处理 schema v1；改由 src/MotionConfigLoader.cpp 校验 YAML baseline→events 并原子追加。
+- **验证**：V02/LLD §9.1 验证 LoadMotionConfig 新实例限制。
+
+##### F27 ros2-vio-node/ftr-eskf/include/euroc_vio/DatumFast.hpp
+
+- **具体处理**：面向估计状态或外部数据加载，不属于运行时物理状态。
+- **目标或排除**：不迁移，公开状态采用冻结 MotionState 而非来源 Fast 状态。
+- **验证**：V01 确认头文件依赖不含 DatumFast/AbstractLoader。
+
+##### F28 ros2-vio-node/ftr-eskf/include/euroc_vio/DatumImu.hpp
+
+- **具体处理**：已有 IMU 数据读取/预积分协作结构，不是所需的瞬时比力与角速度输出。
+- **目标或排除**：不纳入，目标 ImuMeasurement 自带严格单位和 SensorId/时间；禁止链接 Preintegrate。
+- **验证**：V06-D 验证理想 IMU 与非零杆臂项。
+
+##### F29 ros2-vio-node/ftr-eskf/include/euroc_vio/DatumTruth.hpp
+
+- **具体处理**：加载既有真值/轨迹以供估计比较，不能作为即时仿真的主运动来源。
+- **目标或排除**：不迁移，真实运动由事件历史按给定时间重算并在需要时即时导出。
+- **验证**：V04/V09 核对事件重放无需历史真值缓存。
+
+##### F30 ros2-vio-node/ftr-eskf/include/euroc_vio/ErrorStateKalmanFilter.hpp
+
+- **具体处理**：含后端状态、滤波更新和历史帧缓冲，不属于 VisualSim。
+- **目标或排除**：排除其头、对象、命名空间和任何隐含历史路标地图；不编进独立库。
+- **验证**：V01/V09 检查无估计器模块、无结果缓存。
+
+##### F31 ros2-vio-node/ftr-eskf/include/euroc_vio/SensorState.hpp
+
+- **具体处理**：定义估计器 ImuState/ImuDerivative 数组，与最终六项物理真值的坐标系合同不同。
+- **目标或排除**：不复用为 MotionState，明确 p/v/a 属于世界系、ω/α 属于 B 系。
+- **验证**：V04/V06-D 通过坐标变换一致性验证。
+
+##### F32 ros2-vio-node/ftr-eskf/include/euroc_vio/SensorYaml.hpp
+
+- **具体处理**：可参考 EuRoC 的 K、T_BS、噪声字段与非法值检查，但未定义事件时间线或动态重命名。
+- **目标或排除**：重写目标 schema v1 解析和导出字段：严格整数纳秒、四元数 wxyz、K 行主序、Unknown 字段拒绝、新实例 LoadMotionConfig/EventHistoryFrozen。
+- **验证**：建议 src/MotionConfigLoader.cpp、DatasetExporter.cpp；V02/V05/V11。
+
+##### F33 ros2-vio-node/ftr-eskf/include/euroc_vio/ZUPT.hpp
+
+- **具体处理**：估计器零速检测及窗口缓冲，会把观测推断成运动模式，背离调用者的显式定义。
+- **目标或排除**：不复制，Stationary 由 API/YAML 事件给出而不是 ZUPT 自动判断。
+- **验证**：V03/V09 检查无 ZUPT 和窗口缓存。
+
+##### F34 ros2-vio-node/ftr-eskf/include/euroc_vio/StereoObservation.hpp
+
+- **具体处理**：ESKF 固定双目观测结构不适合多相机 SensorFrame。
+- **目标或排除**：不纳入，单目/双目/N 相机由 CameraRegistry 统一按 SensorId 输出。
+- **验证**：V05/V07 检查不做左右公共可见点强制交集。
+
+##### F35 ros2-vio-node/ftr-eskf/include/euroc_vio/CircularBuffer.hpp
+
+- **具体处理**：主要供 ZUPT 使用的滑窗缓存，不符合本版禁止历史结果缓存的约束。
+- **目标或排除**：不迁移，不用它缓存 IMU 样本、计算位姿或 Raycast 命中；只允许持久事件历史及最小序号状态。
+- **验证**：V09 内存结构/源码审查。
+
+##### F36 ros2-vio-node/ftr-eskf/include/euroc_vio/VisionMode.hpp
+
+- **具体处理**：仅来源 VisualSlam 图像读取测试依赖的模式类型，不是 camera/imu SensorGate。
+- **目标或排除**：不复制或加入公共头；门控按 LLD §2 的 camera、imu 布尔字段。
+- **验证**：V07 验证门控组合，V01 扫描排除 VisionMode。
+
+##### F37 ros2-vio-node/ftr-eskf/include/euroc_vio/pch.hpp
+
+- **具体处理**：源工程预编译头包含 rclcpp、cv_bridge、ROS 消息与 message_filters。
+- **目标或排除**：严格排除；不得让目标 target_include_directories/target_precompile_headers 引入 common_pch 或 ROS include。
+- **验证**：V01 进行头文件独立编译、ELF NEEDED/ldd ROS 扫描。
+
+##### F38 ros2-vio-node/ftr-eskf/src/VisualSlam/ImageDataLoader.hpp
+
+- **具体处理**：是 CameraFrameIOTests 间接依赖的图像读取器，不属于数据生成库。
+- **目标或排除**：不迁移；目标 ExportTests 自行解码当次 PNG 验证，不链接 VisualSlam。
+- **验证**：V01/V10 检查无 VisualSlam 依赖。
+
+
+### 3.9 构建文件与脚本逐项修改细则（对应 §3.6 的 8 行）
+
+以下是实施阶段的文件级修改合同。§3.6 表中的“未来处理”结论不变，新增说明细化怎样实施、怎样判定完成；来源仓库仍只读。
+
+##### B01 VisualSim/main/CMakeLists.txt
+
+- **修改步骤**：在配置阶段拒绝非 Linux；分离 SHARED libvisualsim.so、薄 CLI、CTest 与安装树外消费者。使用 GNUInstallDirs、CMakePackageConfigHelpers、install(EXPORT)、带版本的 VisualSimConfig.cmake/Targets，设置可安装公开头路径与实际非 ROS 依赖，并明确 SONAME/ABI 边界。
+- **边界和取舍**：目标库以 find_package(VisualSim CONFIG REQUIRED)、VisualSim::VisualSim 被独立工程消费；不把来源的 ament、common_pch、ROS 包、camera_frame_io/FFmpeg 或全局 -march=native/-freflection 无条件移入。按真实使用的语言特性设标准，不强制降低现有 GCC 16.2.0/CMake 4.3.4。
+- **完成检查**：P1/V01：Ubuntu 24.04 构建、指定前缀安装、运行独立消费者、扫描依赖；当前不执行。
+
+##### B02 VisualSim/main/CMakePresets.json
+
+- **修改步骤**：删除 windows 名称、Visual Studio 生成器、x64-windows triplet、Windows 盘符目录的固定值；改为按需提供 Linux Ninja/Unix Makefiles 的 Debug/Release configure/build/test presets。
+- **边界和取舍**：Presets 的 CMAKE_INSTALL_PREFIX/依赖前缀可由调用者覆盖，禁止机器专属硬编码；不得内含 Windows 可用构建入口。
+- **完成检查**：P1：cmake --list-presets 和 Ubuntu 配置验证，CMake 非 Linux 配置明确失败。
+
+##### B03 VisualSim/main/build.ps1、run.ps1、clean.ps1
+
+- **修改步骤**：这三个都是 Windows/PowerShell 入口，实施时从目标仓库移除并删除 README 调用示例；如需 Linux 自动化则另外提供不强制指定路径的 .sh 或说明命令。
+- **边界和取舍**：任何新执行脚本都不能隐式 remove_all 用户输出目录，不得预先清除用户数据；独立 .so 及 CLI 的构建/运行入口由 Linux CMake 主导。
+- **完成检查**：P1/P6 检查三个 .ps1 已无可运行的 Windows 构建路径。
+
+##### B04 VisualSim/main/vcpkg.json
+
+- **修改步骤**：先检查它是否仍由 Linux 实际构建使用；首选 CMake find_package 已安装的 Eigen/OpenCV/Sophus/yaml-cpp，若未实际使用 vcpkg 则删除 manifest。
+- **边界和取舍**：如果因用户 Linux 环境需要而保留，应标成可选 Linux 包管理方式，不使用 x64-windows/盘符路径、不把 FFmpeg 默认引入，也不修改用户现有编译器版本。
+- **完成检查**：P1 的干净安装前缀消费者验收；不能把是否启用 vcpkg 当作功能先决条件。
+
+##### B05 VisualSim/main/README.md
+
+- **修改步骤**：替换 Windows 11 + PowerShell 指南，明确 Ubuntu 24.04 Linux-only 的编译、指定前缀安装、外部 C++ find_package/链接/运行命令。
+- **边界和取舍**：增加函数与 YAML 定义运动事件、BeginMotionMode/EndMotionEnd、动态 camX、Room-only、int64 纳秒、Generate/Raycast、IMU 噪声与显式 PNG/CSV 数据集导出示例；严格区分设计计划和真实实现状态。
+- **完成检查**：P1/P6 按 README 复做命令，拒绝 Windows 编译和隐式覆盖文件。
+
+##### B06 ros2-vio-node/ftr-eskf/CMakeLists.txt
+
+- **修改步骤**：这是 ROS 主工程，含 ament、rclcpp、ROS 消息以及 common_pch；保留为只读参考，仅用于确认来源真实依赖。
+- **边界和取舍**：**不迁移、不修改源仓库**；目标从零建立独立 Linux SHARED 构建，不通过 add_subdirectory 把 ROS 根工程编进来。
+- **完成检查**：V01 通过源码依赖、公开头与 ELF 动态依赖检查无 ROS。
+
+##### B07 ros2-vio-node/ftr-eskf/src/VisualSim/CMakeLists.txt
+
+- **修改步骤**：来源独立子目录定义 VisualSim 可执行程序、C++23、Sophus/Eigen/OpenCV、CameraIO 子目录及 StressTests，仍非可安装运行时库。
+- **边界和取舍**：不直接复制；目标按所需源码建立真正的共享库，排除固定双目/FFmpeg/Stress 额外模块；C++23 特性仅在真实需要时采用。
+- **完成检查**：P1/V01 检查 SHARED target 的安装路径、依赖与消费端，无来源目录路径残留。
+
+##### B08 ros2-vio-node/ftr-eskf/src/CameraIO/CMakeLists.txt
+
+- **修改步骤**：来源构建 camera_frame_io STATIC，依赖 OpenCV videoio、FFmpeg pkg-config libavcodec/libavformat/libavutil，并提供 Windows SDK fallback。
+- **边界和取舍**：不迁入、不复制其平台选择；目标仅由 DatasetExporter 输出 CV_8UC1 PNG/CSV，绝不把 libav* 或 Windows 编码器 SDK 作为 v1 强制依赖。
+- **完成检查**：P1/P6 通过 link target/ldd/readelf 检查 FFmpeg 非必需。
+
+### 3.10 文件级改动与 v1 端到端功能闭环
+
+| 功能链 | 需要一起完成的文件工作（原表 F 编号） | 实际验收入口 |
+| --- | --- | --- |
+| 独立库 | F03 拆 CLI、F25/F32 重建导出/配置接口，B01–B08 控制 Linux/无 ROS；F18/F37 严格排除 | P1/V01 |
+| 运动事件 | F02/F12 组合六模式解析式与时刻历史、F04 测试，F07 不引入读取式轨迹 | P2/V02–V04 |
+| N 相机 | F05/F15/F19 重建注册、标定、生成；不引入 F34 的双目估计观测 | P3/P5/V05、V07 |
+| IMU | F09 重做无缓存噪声，F19 迁移理想比力物理式，F08/F28/F30 不进入库 | P3/V06-D、V06-S |
+| Room + 视线 | F01/F14 唯一 Room 真值、F11 离屏渲染，F10 不能改变解析交点 | P4/V08 |
+| 显式导出 | F03/F19/F21/F25/F32 整合 PNG/CSV/YAML，F20/F22/F23/F24/F38 仅按允许范围取用测试思想 | P6/V10、V11 |
+| 排除性检查 | F06/F07/F08/F10/F13/F16/F17/F18/F20/F22/F23/F26–F31/F33–F38 等不应出现为目标库强制依赖 | P1/P6/V01、V09 |
+
+完成某个单独文件的改写，不等于上表功能链通过。所有生产代码的实现、编译与测试结果须在后续 P0–P6 记录；本轮仅完善实施计划。
+
+### 3.11 运行环境未确认信息与只读取证命令
+
+**已知**：用户提供 Ubuntu 24.04、CMake 4.3.4、GCC C++ 16.2.0，禁止为兼容发行版默认软件包而降低已有版本。**尚待实际机器核实**：Eigen/OpenCV/Sophus/yaml-cpp 的版本与 CMake 包查找路径、glibc/libstdc++ ABI、处理器架构和真实链接依赖。下面命令不编译、不安装、不运行 CTest、不修改两仓库，也不要求 sudo；获取输出后再用于 P0/P1 取证。
+
+~~~bash
+# OS、架构、编译器、CMake 与标准库
+cat /etc/os-release | grep -E '^(NAME|VERSION|VERSION_ID)='
+uname -m
+command -v cmake c++
+cmake --version
+c++ --version
+c++ -dumpmachine
+c++ -print-file-name=libstdc++.so.6
+ldd --version | head -n 1
+
+# pkg-config 能识别的非 ROS 开发库；缺失信息不等于库未安装
+if command -v pkg-config >/dev/null 2>&1; then
+  for pkg in eigen3 opencv4 yaml-cpp; do
+    printf '%s: ' "$pkg"
+    pkg-config --modversion "$pkg" 2>&1 || true
+  done
+fi
+
+# Sophus 等 CMake Config 实际路径；只读查找
+find /usr /usr/local /opt -type f   ( -name 'SophusConfig.cmake' -o -name 'sophus-config.cmake'      -o -name 'Eigen3Config.cmake' -o -name 'OpenCVConfig.cmake'      -o -name 'yaml-cpp-config.cmake' ) -print 2>/dev/null | head -n 80
+~~~
+
+若没有找到某个 Config 文件，只能说明该查询路径中未找到，**不能直接断言缺少依赖**。后续实施 P0 时再按实际 CMAKE_PREFIX_PATH 和 find_package 进行检查。当前不要求安装新库或修改 C++ 标准。
+
+
 
 ## 4. 实施阶段
 
