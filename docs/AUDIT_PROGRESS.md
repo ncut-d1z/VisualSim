@@ -1,6 +1,6 @@
 # VisualSim 文档审计进度（AUDIT_PROGRESS）
 
-> 当前轮次：**Round 3 已完成：目标及来源 38/38 个相关头/源文件已逐项核验，A20–A25 共 6/6 项已整改**。Round 1（13 项）与 Round 2（6 项）历史保留，累计 A01–A25 **25/25 闭环**；生产代码、编译和功能验收尚未执行。
+> 当前轮次：**Round 4 文档整改已完成：A26–A30 共 5/5 项已整改**，累计 A01–A30 **30/30 闭环**。38 个文件与 8 条构建记录的详细实施要求已写入计划；**生产代码、CMake/CTest 与功能验收尚未执行**。
 >
 > 审计依据：[AUDIT.md](AUDIT.md)；文档对象：SRS.md、HLD.md、LLD.md、IMPLEMENTATION_PLAN.md；仅允许修改 ncut-d1z/VisualSim 的 docs 文档。来源 ncut-d1z/ros2-vio-node 禁止写入。
 >
@@ -187,16 +187,30 @@
 
 | 编号 | 相对文件 | 整改目标 | 状态 |
 | --- | --- | --- | --- |
-| A26 | docs/IMPLEMENTATION_PLAN.md | 新增覆盖原 38 行头/源文件的详细逐文件迁移/排除说明，不改变原表格 | 未整改 |
-| A27 | docs/IMPLEMENTATION_PLAN.md | §3.6 仓库列写明完整仓库名且增加分支列，原 8 行处置不变 | 未整改 |
-| A28 | docs/IMPLEMENTATION_PLAN.md | 逐项说明 3.6 构建/脚本的操作和验收 | 未整改 |
-| A29 | docs/IMPLEMENTATION_PLAN.md | 增补 Ubuntu 24.04/CMake/GCC/依赖的只读取证命令，不编译 | 未整改 |
-| A30 | docs/AUDIT_PROGRESS.md | 逐项核实、保留旧记录、最终结论和文件/提交证据 | 未整改 |
+| A26 | docs/IMPLEMENTATION_PLAN.md | 新增覆盖原 38 行头/源文件的详细逐文件迁移/排除说明，不改变原表格 | 已整改 |
+| A27 | docs/IMPLEMENTATION_PLAN.md | §3.6 仓库列写明完整仓库名且增加分支列，原 8 行处置不变 | 已整改 |
+| A28 | docs/IMPLEMENTATION_PLAN.md | 逐项说明 3.6 构建/脚本的操作和验收 | 已整改 |
+| A29 | docs/IMPLEMENTATION_PLAN.md | 增补 Ubuntu 24.04/CMake/GCC/依赖的只读取证命令，不编译 | 已整改 |
+| A30 | docs/AUDIT_PROGRESS.md | 逐项核实、保留旧记录、最终结论和文件/提交证据 | 已整改 |
 
 | 本轮对象 | 审计状态 |
 | --- | --- |
-| docs/IMPLEMENTATION_PLAN.md | 正在审计 |
+| docs/IMPLEMENTATION_PLAN.md | 已审计 |
 | docs/AUDIT.md | 已审计（已登记本轮规则） |
-| docs/AUDIT_PROGRESS.md | 正在审计 |
+| docs/AUDIT_PROGRESS.md | 已审计 |
 
 **初始统计**：本轮 5 项，已整改 0、未整改 5；上一轮累计 A01–A25 已整改 25、未整改 0。本轮只对 docs 做静态检查，P0–P6 代码实施未执行。
+
+### 8.1 Round 4 结果与证据
+
+| 审计/整改项 | 最终状态 | 可核查依据 |
+| --- | --- | --- |
+| A26 38 文件细化 | 已整改 | §3.8 F01–F38，四个目标、十五个来源核心、十九个关联文件，每项具体处理、目标/排除和验证 |
+| A27 §3.6 仓库/分支 | 已整改 | 8 行：VisualSim/main 5 行、ros2-vio-node/ftr-eskf 3 行；原处置文案完全保留 |
+| A28 构建配置细则 | 已整改 | §3.9 B01–B08 对应全部 §3.6 行，补 Linux SHARED、安装、README、Windows/FFmpeg 排除与验证 |
+| A29 环境命令 | 已整改 | §3.11 不带 sudo 的 OS/编译器/ABI、pkg-config、Sophus Config 只读取证，不误记为实测 |
+| A30 复核和台账 | 已整改 | §3.1–3.5/§3.7 逐字保留、§8–§11 原文未改变；F=38、B=8；更新审计台账 |
+
+**顺序**：先行登记提交 `774ec85a1c70a542f62b69fec634d8ddee59aea3` → 实施计划修订提交 `8c83b724fa97b88f70db830c46432ae8325452d0` → 本轮审计结论归档。
+
+**本轮统计**：审计对象 3/3（PLAN、AUDIT、AUDIT_PROGRESS），A26–A30 已整改 **5/5**，无需整改 **0**，未整改 **0**；累计 A01–A30 已闭环 **30/30**。原表、既定 v1 API、数学、统计阈值保持不变。来源 ftr-eskf 保持只读，P0–P6 代码实施、编译、CTest 均未执行。
