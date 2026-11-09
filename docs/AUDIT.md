@@ -230,3 +230,21 @@
 4. **合同校验**：先前对照中 `if (!snapshot)` 等对非布尔 `Result<T>` 的错误假设已改为判断 `.status != Status::Ok`；因公开 API 包含 Eigen 与 `cv::Mat`，拟议 CMake 示例把 Eigen/OpenCV 作为 PUBLIC 依赖并在下游 Package Config 中 find_dependency。遵守 Room-only、严格 int64 时间、双类别模式、相机多实例、无结果缓存及无 ROS/FFmpeg 强制依赖。
 5. **静态结构验证**：原实施计划 §3.1–3.11 内容保持；38 个 F、8 个 B、8 个 N 的标题编号连续/完整；新增代码段 46 组配对，backtick/tilde 围栏均为偶数。代码链接是**规范中的计划示例**，未编译、未做 CTest，也不得宣称 P0–P6 源码实施验收。
 6. **本轮结果**：A31–A34 共 **4/4 已整改**，无需整改 0、未整改 0；总计 A01–A34 **34/34 已整改**。后续 P0 必须核对源码最新 HEAD 和编译环境，逐项将代码骨架补齐为真正可编译实现，并按 PLAN 验收。
+
+## 16. Round 6：用户实机环境命令执行结果归档
+
+用户要求将连续两轮对话中亲自提供的命令、控制台原始输出写入单独 Markdown，今后要求用户执行的其他环境命令也须在同一文件持续登记。执行规则：
+
+1. 唯一持久环境记录位置：`docs/BUILD_ENVIRONMENT.md`，不得以实施计划的“摘要”替代原始输出。它必须逐条注明命令、原始输出、状态、用户提供/模型观察来源，以及仍需确认之处；不要将用户提供的实机结果误称为模型自己运行。
+2. 归档范围：先前 `/etc/os-release`、`uname`、CMake/GCC、libstdc++、glibc、pkg-config；本轮 Sophus/Eigen/OpenCV/yaml-cpp Config 查找、libstdc++ 实际解析路径、ldconfig 缓存、GLIBCXX 符号输出。包括前轮失败的 find 原始命令和 Bash 错误，不删除失败证据。
+3. 对重复 find 搜索结果保留原始行，不擅自推断安装了两个相同 Sophus 或两个 OpenCV；`opencv5` 的 CMake 目录只能说明存在配置文件，不等于构建时实际选择 OpenCV 5；`/opt/eigen-5.0.1/build` 不能视为当前 Eigen 版本。
+4. 后续提出新环境检查命令时，在此文件追加连续的命令编号和“待执行”；当用户贴回结果，再追加完整原始输出、记录日期、成功/失败及解释。旧记录只追加勘误不覆盖。
+5. 在 `docs/IMPLEMENTATION_PLAN.md` 的工具链取证位置引用唯一环境记录文件；设计基线 SRS/HLD/LLD 无需因事实取证而更改，P0–P6 不得被误标为已运行。
+6. 执行范围：**仅目标仓库 VisualSim 的 docs 文件**；只读来源 ros2-vio-node/ftr-eskf 严禁写入。按 AUDIT_PROGRESS 的登记/实际结果/静态核查顺序闭环，不执行编译、CTest 或系统设置变更。
+
+| 目标 | 位置 | 通过依据 |
+| --- | --- | --- |
+| A35 | docs/BUILD_ENVIRONMENT.md | 两轮用户提供的命令及原始输出完整归档，包括失败 find 和修正后的成功 find |
+| A36 | docs/BUILD_ENVIRONMENT.md | 后续命令的“待执行→已反馈→复核”追加规则、唯一编号和区分事实/推断 |
+| A37 | docs/IMPLEMENTATION_PLAN.md | 环境取证章节引用独立文件、保留既有版本与计划，明确不等于 P0 已执行 |
+| A38 | docs/AUDIT_PROGRESS.md | 登记、复核、提交与 4 项状态闭环 |
