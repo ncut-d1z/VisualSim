@@ -471,6 +471,1734 @@ find /usr /usr/local /opt -type f   ( -name 'SophusConfig.cmake' -o -name 'sophu
 
 
 
+### 3.12 已有文件的真实改动前/拟议改动后代码对照
+
+本节为前面 38 个头/源文件、8 项构建/脚本登记提供逐项代码级证据。**“改动前”片段是固定提交中真实存在的原代码**，每个附原仓库、commit、文件路径与 GitHub 行号。**“改动后”是目标仓库将来实施的示例片段**，涉及新私有辅助函数时已注明尚须实现；本轮没有编译、没有修改 C++ 或 CMake。对于不迁移的来源文件，展示的是目标替代代码或明确的构建排除，不是篡改来源文件。
+
+固定源码快照：VisualSim/main 为 dbfab8e6d6b7619c72a0050c8a760d748d6e9628，ros2-vio-node/ftr-eskf 为 fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03。若后续这些来源提交有变化，P0 应重新核对实际源码后再使用本章，不得盲目按旧行号修改。
+
+### 3.12.1 F01–F10：真实源码对照与拟议代码
+
+本节“改动前”是来自固定提交的**实际文件逐行原文**；“计划改动后”是未编译、未实施的目标片段，引用的私有辅助函数将在后续 P1–P6 实现。对于排除项，后半段是目标替代/编译排除，不是修改来源文件。
+
+#### F01 — src/Room.hpp
+
+**改动前（逐字摘录）**：[ncut-d1z/VisualSim@dbfab8e6d6b7 src/Room.hpp L21–L26](https://github.com/ncut-d1z/VisualSim/blob/dbfab8e6d6b7619c72a0050c8a760d748d6e9628/src/Room.hpp#L21-L26)
+
+```cpp
+
+  const value_type width_{10.0};
+  const value_type depth_{10.0};
+  const value_type height_{3.0};
+  const Point3 center_{depth_ * static_cast<value_type>(0.5),
+                       width_ * static_cast<value_type>(0.5),
+```
+
+**计划改动后（未写入源码的上下文片段）**：
+
+```cpp
+// 目标：Room 的尺寸随指定时刻有效的 RoomConfig 改变。
+template<class T> T CheckedStep(T length, int subdivisions) {
+  if (!std::isfinite(length) || length <= T{0} ||
+      subdivisions <= 0 || subdivisions % 2 != 0)
+    throw std::invalid_argument("invalid Room dimensions/grid");
+  return length / static_cast<T>(subdivisions);
+}
+// Room(T depth, T width, T height, ...):
+//   depth_(depth), width_(width), height_(height),
+//   step_d_(CheckedStep(depth, count_depth)), ...
+// 唯一连续真值面仍是 x=0/depth、y=0/width、z=0/height。
+```
+
+**取舍及验收**：保留目标 Room 的六面格点/Points()；按时间取得 RoomConfig，使用 CheckedStep 防止非法边长/分割数，求交计算连续有限面而非格点。V08。
+
+#### F02 — src/Trajectory.hpp
+
+**改动前（逐字摘录）**：[ncut-d1z/VisualSim@dbfab8e6d6b7 src/Trajectory.hpp L41–L46](https://github.com/ncut-d1z/VisualSim/blob/dbfab8e6d6b7619c72a0050c8a760d748d6e9628/src/Trajectory.hpp#L41-L46)
+
+```cpp
+ protected:
+  double clampTime(double time_s) const noexcept {
+    return std::clamp(time_s, 0.0, duration_s_);
+  }
+
+ private:
+```
+
+**计划改动后（未写入源码的上下文片段）**：
+
+```cpp
+// 目标：以用户的整型事件时间分段，而不是静默 clampTime。
+Result<MotionState> Simulator::GetMotionState(TimestampNs at_ns) const {
+  if (at_ns < 0) return {Status::InvalidTimestamp, std::nullopt,
+                         "negative timestamp"};
+  return impl_->EvaluateAt(at_ns); // 新增：按历史事件顺序解析每个运动段
+}
+// EvaluateAt 内：先累计 [previous_event_ns, event_ns]，
+// 再按 insertion_order 应用 Begin/Set/End，并积分剩余区间。
+// 此处仅展示接口替换点；完整 Evaluate 合同见 LLD §4。
+```
+
+**取舍及验收**：旧 duration_s/clampTime 不能决定历史查询，未来实现需按 LLD §4 的时间事件解析出六项 MotionState。V02–V04。
+
+#### F03 — src/main.cpp
+
+**改动前（逐字摘录）**：[ncut-d1z/VisualSim@dbfab8e6d6b7 src/main.cpp L207–L212](https://github.com/ncut-d1z/VisualSim/blob/dbfab8e6d6b7619c72a0050c8a760d748d6e9628/src/main.cpp#L207-L212)
+
+```cpp
+
+  fs::remove_all(root.parent_path());
+  fs::create_directories(image_dir);
+  fs::create_directories(imu0);
+  fs::create_directories(gt_dir);
+
+```
+
+**计划改动后（未写入源码的上下文片段）**：
+
+```cpp
+// 目标：生成和求交接口不写文件；只有显式 CLI 导出才创建目录。
+Result<void> ExportDataset(const std::filesystem::path& root,
+                           const SampleBatch& batch) {
+  if (std::filesystem::exists(root))
+    return {Status::InvalidArgument, "output directory already exists"};
+  // 在已验证的新目录中提交 PNG/CSV/YAML 导出事务，
+  // 出错清理由专属导出目录管理，不调用 remove_all(user_root)。
+  return WriteNewDatasetFiles(root, batch);
+}
+```
+
+**取舍及验收**：将原 main 的 Render/IMU/YAML/CSV 拆进库与 Exporter，CLI 只读取 YAML 和显式输出路径；“WriteNewDatasetFiles”为未来导出私有函数，非现存 API。V10。
+
+#### F04 — tests/TrajectoryTests.cpp
+
+**改动前（逐字摘录）**：[ncut-d1z/VisualSim@dbfab8e6d6b7 tests/TrajectoryTests.cpp L22–L29](https://github.com/ncut-d1z/VisualSim/blob/dbfab8e6d6b7619c72a0050c8a760d748d6e9628/tests/TrajectoryTests.cpp#L22-L29)
+
+```cpp
+      ForwardConstantVelocity path(
+          10.0, 0.5, Eigen::Vector3d(1.0, 2.0, 3.0),
+          Eigen::Matrix3d::Identity());
+
+      const auto p0 = path.pose(0.0);
+      const auto p2 = path.pose(2.0);
+      const auto k = path.kinematics(7.0);
+
+```
+
+**计划改动后（未写入源码的上下文片段）**：
+
+```cpp
+// 目标测试：检验已经冻结的事件 API，而非硬编码 Trajectory 对象。
+visualsim::Simulator sim;
+auto set = sim.SetLinearMotion(
+    0, visualsim::LinearConstantVelocity{
+        Eigen::Vector3d{0.0, 0.0, 0.5}});
+Require(set.status == visualsim::Status::Ok, "SetLinearMotion failed");
+auto state = sim.GetMotionState(2'000'000'000LL);
+Require(state.status == visualsim::Status::Ok, "motion query failed");
+Require((state.value->position_W_m -
+        Eigen::Vector3d{0.0, 0.0, 1.0}).norm() < 1e-12,
+        "constant-velocity displacement incorrect");
+```
+
+**取舍及验收**：这是 Test 函数内的示例片段；另须测试初始位置、作用域、圆周、角位移、右侧导数与错误返回，保留旧数学真值基准。V02–V04。
+
+#### F05 — src/VisualSim/Camera.hpp
+
+**改动前（逐字摘录）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/Camera.hpp L25–L31](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/Camera.hpp#L25-L31)
+
+```cpp
+  // 相机外参: 载具坐标系 → 传感器坐标系的变换 (T_SB), p_S = T_SB · p_B
+  Pose sensor_from_body_{};
+  int width_{752};
+  int height_{480};
+
+  Camera()
+  {
+```
+
+**计划改动后（未写入源码的上下文片段）**：
+
+```cpp
+// 目标 src/CameraRenderer.cpp：冻结 T_BC 是 C -> B，不是来源 T_SB。
+Eigen::Isometry3d T_WB = BodyPoseAt(at_ns);
+Eigen::Isometry3d T_WC = T_WB * camera.T_BC;
+Eigen::Vector3d X_C = T_WC.inverse() * X_W;
+if (!(X_C.z() > 0.0)) return ProjectedPoint::BehindCamera;
+const double x = X_C.x() / X_C.z(), y = X_C.y() / X_C.z();
+const Eigen::Vector2d xd = DistortRadtan(x, y, camera.radtan);
+const Eigen::Vector3d pixel_h = camera.K * Eigen::Vector3d{xd.x(),xd.y(),1.0};
+// DistortRadtan 是待实现的 LLD §5.2 畸变公式，不是来源已有函数。
+```
+
+**取舍及验收**：目标将 T_BC 统一为 C→B，进入相机则逆变换；相机 K/畸变参数从该时刻配置获得，不能复制源 fx=450 默认值。V05/V06-D。
+
+#### F06 — src/VisualSim/ErrorEvaluation.hpp
+
+**改动前（逐字摘录）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/ErrorEvaluation.hpp L11–L15](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/ErrorEvaluation.hpp#L11-L15)
+
+```cpp
+
+#include "euroc_vio/DatumTruth.hpp"
+
+class ErrorEvaluation
+{
+```
+
+**计划改动后（未写入源码的上下文片段）**：
+
+```cmake
+# 目标 CMakeLists.txt：仅编入仿真源文件，不编入 ErrorEvaluation.hpp 的估计器。
+add_library(visualsim SHARED
+  src/Simulator.cpp src/MotionHistory.cpp src/CameraRenderer.cpp
+  src/ImuModel.cpp src/RoomRenderer.cpp src/RayCaster.cpp)
+# 估计误差由 tests 单独基于 MotionState 计算；
+# ErrorEvaluation.hpp、DatumTruth.hpp 不在目标 public includes 或 target 中。
+```
+
+**取舍及验收**：来源文件保持原样、不会修改；这是目标将采用的源文件白名单示例，不是删除来源文件。V01。
+
+#### F07 — src/VisualSim/EvoSim3.hpp
+
+**改动前（逐字摘录）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/EvoSim3.hpp L23–L27](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/EvoSim3.hpp#L23-L27)
+
+```cpp
+
+#include "euroc_vio/AbstractLoader.hpp"
+
+class EvoSim3
+{
+```
+
+**计划改动后（未写入源码的上下文片段）**：
+
+```cpp
+// 目标使用 v1 YAML 事件而非来源 EvoSim3 数据加载器。
+visualsim::Simulator simulator;
+auto loaded = simulator.LoadMotionConfig("motion.yaml");
+if (loaded.status != visualsim::Status::Ok)
+  throw std::runtime_error(loaded.message);
+auto truth = simulator.GetMotionState(2'000'000'000LL);
+// 只有 LoadMotionConfig 新实例限制成立才允许加载；见 LLD §9.1。
+```
+
+**取舍及验收**：不迁移 EvoSim3.hpp，也不引入 AbstractLoader/反射 API。V02。
+
+#### F08 — src/VisualSim/ImuNoiseModel.cpp
+
+**改动前（逐字摘录）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/ImuNoiseModel.cpp L230–L235](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/ImuNoiseModel.cpp#L230-L235)
+
+```cpp
+
+int InjectImuNoise(const std::filesystem::path &path_mav0)
+{
+  const std::filesystem::path path_imu_data{path_mav0 / "imu0" / "data.csv"};
+  const std::filesystem::path path_sensor_yaml{
+      path_mav0 / "imu0" / "sensor.yaml",
+```
+
+**计划改动后（未写入源码的上下文片段）**：
+
+```cpp
+// 目标：IMU 加噪在本次 Generate 的临时事务完成，不另写 CSV。
+visualsim::Simulator sim;
+auto batch = sim.Generate(5'000'000LL, {.camera = false, .imu = true});
+if (batch.status != visualsim::Status::Ok)
+  throw std::runtime_error(batch.message);
+// CSV 导出若需要须另调用显式的 DatasetExporter，
+// 不能复制来源独立 main() / InjectImuNoise(path_mav0)。
+```
+
+**取舍及验收**：禁复制来源离线 CSV 加噪 CLI，禁在 Generate 中隐式文件操作。V06/V10。
+
+#### F09 — src/VisualSim/ImuNoiseModel.hpp
+
+**改动前（逐字摘录）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/ImuNoiseModel.hpp L76–L83](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/ImuNoiseModel.hpp#L76-L83)
+
+```cpp
+  {
+    gyro_bias_ += SampleIsotropicGaussian(sigma_gyro_bias_walk_);
+    accel_bias_ += SampleIsotropicGaussian(sigma_accel_bias_walk_);
+    return Measurement{
+        gyro_truth + gyro_bias_ + SampleIsotropicGaussian(sigma_gyro_noise_),
+        accel_truth + accel_bias_ + SampleIsotropicGaussian(sigma_accel_noise_),
+    };
+  }
+```
+
+**计划改动后（未写入源码的上下文片段）**：
+
+```cpp
+// 目标 src/ImuModel.cpp 的片段：样本按整数时间重算，不持久保存 bias。
+const double dt_s = last_imu_ns
+    ? SecondsChecked(at_ns - *last_imu_ns)
+    : 1.0 / calibration.nominal_rate_hz;
+const Eigen::Vector3d white = Gaussian3ByKey(
+    calibration.seed, noise_epoch_id, sensor_id, at_ns)
+    * (calibration.gyroscope_noise_density / std::sqrt(dt_s));
+const Eigen::Vector3d bg = calibration.initial_gyro_bias_S
+    + calibration.gyroscope_random_walk * BrownianBridgeAt(
+        calibration.seed, noise_epoch_ns, at_ns, 0);
+// 以上 helpers 按 LLD §6.2 实现 SplitMix64/Box–Muller/布朗桥树。
+const Eigen::Vector3d gyro_m = gyro_truth_S + bg + white;
+```
+
+**取舍及验收**：旧 mt19937、顺序偏置和固定步长不得迁移；Gaussian3ByKey/BrownianBridgeAt 是必须新实现的私有函数，不能仅声明。V06-D/S。
+
+#### F10 — src/VisualSim/LinearKalmanFilter.hpp
+
+**改动前（逐字摘录）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/LinearKalmanFilter.hpp L6–L11](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/LinearKalmanFilter.hpp#L6-L11)
+
+```cpp
+#include <opencv2/core/types.hpp>
+#include <opencv2/video/tracking.hpp>
+
+// @see: https://docs.opencv.org/4.x/dc/d2c/tutorial_real_time_pose.html
+// @see: https://docs.opencv.org/4.x/dd/d6a/classcv_1_1KalmanFilter.html
+
+```
+
+**计划改动后（未写入源码的上下文片段）**：
+
+```cpp
+// 目标公共生成接口直接返回合成图像，不调用特征跟踪滤波。
+Result<SampleBatch> Simulator::Generate(TimestampNs at_ns, SensorGate gate) {
+  auto snapshot = impl_->EvaluateWithCalibration(at_ns);
+  if (snapshot.status != Status::Ok)
+    return {snapshot.status, std::nullopt, snapshot.message};
+  return impl_->GenerateAtomic(*snapshot.value, gate);
+}
+// 生成路径不含 LinearKalmanFilter、cv::KalmanFilter 或光流跟踪器。
+```
+
+**取舍及验收**：未来示意涉及的新私有 EvaluateWithCalibration/GenerateAtomic 必须在 P3/P5 实现；源文件保持不变，不进入目标 CMake。
+
+
+### 3.12.2 F11–F19：来源 VisualSim 的真实片段与计划代码
+
+#### F11 — src/VisualSim/MeshPlot.hpp
+
+**改动前（来源真实原文，来源仓库不修改）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/MeshPlot.hpp L57–L64](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/MeshPlot.hpp#L57-L64)
+
+```cpp
+#ifdef VISUALSIM_HAS_HIGHGUI
+    cv::destroyAllWindows();
+#endif
+  }
+
+  // 使用索引表示三角形
+  struct Triangle : public std::array<std::size_t, 3>
+  {
+```
+
+**迁移后的目标片段（未实施代码草案）**：
+
+```cpp
+// 目标 src/RoomRenderer.cpp：离屏、逐相机，无 highgui 生命周期。
+cv::Mat RoomRenderer::Render(const MotionState& state,
+                             const CameraCalibration& cam,
+                             const RoomConfig& room) const {
+  cv::Mat image(cam.height, cam.width, CV_8UC1, cv::Scalar(18));
+  for (int v = 0; v < cam.height; ++v)
+    for (int u = 0; u < cam.width; ++u)
+      image.at<std::uint8_t>(v, u) =
+          ShadeRoomFirstHit(u, v, state, cam, room);
+  return image;
+}
+// ShadeRoomFirstHit: 反畸变得单位视线，调用同一有限 Room 面求交。
+```
+
+**边界与验证**：不得带入 cv::namedWindow、destroyAllWindows 或左右共享可见点交集；`ShadeRoomFirstHit` 为需实现的私有离屏求交/着色帮助函数。V05/V08/V10。
+
+#### F12 — src/VisualSim/Path.hpp
+
+**改动前（来源真实原文，来源仓库不修改）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/Path.hpp L39–L46](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/Path.hpp#L39-L46)
+
+```cpp
+
+  virtual Pose GetPose(value_type time) const = 0;
+
+  virtual Kinematics GetKinematics(value_type time) const = 0;
+
+  virtual value_type GetDefaultDuration() const
+  {
+    return std::numeric_limits<value_type>::infinity();
+```
+
+**迁移后的目标片段（未实施代码草案）**：
+
+```cpp
+// 目标 src/MotionHistory.cpp：双类别分别更换，不在 PathManager 排队。
+Result<void> Simulator::SetAngularMotion(TimestampNs ns,
+                                         const AngularMotionSpec& spec) {
+  return impl_->AppendValidatedEvent(ns, SetAngularEvent{spec});
+}
+// EvaluateAt 对每个事件先调用 AdvanceAnalytic(state, linear, angular, dt);
+// 然后设置 active.angular = spec，不改变 active.linear。
+// 角状态满足 R_WB = R_anchor * Exp([axis_B * rate * dt]x)。
+```
+
+**边界与验证**：必须补完整的事件校验、作用域栈与圆周重入；不复用旧的浮点 duration 作为事件时间键。V03/V04。
+
+#### F13 — src/VisualSim/Preintegrate.hpp
+
+**改动前（来源真实原文，来源仓库不修改）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/Preintegrate.hpp L9–L16](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/Preintegrate.hpp#L9-L16)
+
+```cpp
+
+#include "euroc_vio/DatumImu.hpp"
+
+struct Preintegration
+{
+  // 范围内总的预积分旋转量
+  Eigen::Quaterniond delta_attitude_{Eigen::Quaterniond::Identity()};
+  // 范围内总的预积分平移量
+```
+
+**迁移后的目标片段（未实施代码草案）**：
+
+```cpp
+// 目标 include/visualsim/Types.hpp：传感器直接输出，而非预积分。
+struct ImuMeasurement {
+  Eigen::Vector3d angular_velocity_S_radps;
+  Eigen::Vector3d specific_force_S_mps2;
+};
+struct SensorFrame {
+  TimestampNs timestamp_ns;
+  SensorId sensor_id;
+  std::string sensor_name;
+  std::uint64_t frame_number;
+  std::variant<cv::Mat, ImuMeasurement> payload;
+};
+```
+
+**边界与验证**：来源预积分文件保留在只读仓库，不编进目标。目标 CMake 不引入 DatumImu、Preintegrate 或 ODE/EKF。V01/V06。
+
+#### F14 — src/VisualSim/Room.hpp
+
+**改动前（来源真实原文，来源仓库不修改）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/Room.hpp L56–L63](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/Room.hpp#L56-L63)
+
+```cpp
+   */
+  Room(int cnt_sep_depth = 20, int cnt_sep_width = 20, int cnt_sep_height = 6,
+       value_type depth = static_cast<value_type>(10.0),
+       value_type width = static_cast<value_type>(10.0),
+       value_type height = static_cast<value_type>(3.0)) :
+    width_{width}, depth_{depth}, height_{height},
+    cnt_sep_depth_{cnt_sep_depth}, cnt_sep_width_{cnt_sep_width},
+    cnt_sep_height_{cnt_sep_height}, step_d_{depth_ / cnt_sep_depth_},
+```
+
+**迁移后的目标片段（未实施代码草案）**：
+
+```cpp
+// 目标 src/Room.hpp 扩展：先拒绝非法动态尺寸/网格数。
+template<class T> struct Room {
+  static T Step(T length, int divisions) {
+    if (!(std::isfinite(length) && length > T{0}) ||
+        divisions <= 0 || divisions % 2 != 0)
+      throw std::invalid_argument("invalid Room");
+    return length / static_cast<T>(divisions);
+  }
+  // 实例化时由 GetRoom(at_ns) 取得该时刻 depth/width/height；
+  // 保留目标 Points()，无自动 stderr 打印；连续表面由 Room::firstHit 表达。
+};
+```
+
+**边界与验证**：将来源可变尺寸与校验合并进**目标单一** Room，不建立第二套同名 namespace 类型。V08。
+
+#### F15 — src/VisualSim/StereoRig.hpp
+
+**改动前（来源真实原文，来源仓库不修改）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/StereoRig.hpp L20–L27](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/StereoRig.hpp#L20-L27)
+
+```cpp
+template <typename value_type>
+struct StereoRig
+{
+  Camera<value_type> camera_left_;
+  Camera<value_type> camera_right_;
+
+  using Point2 = Eigen::Vector<value_type, 2>;
+  using Pose   = typename Camera<value_type>::Pose;
+```
+
+**迁移后的目标片段（未实施代码草案）**：
+
+```cpp
+// 目标 src/CameraRegistry.cpp：传感器实例不是固定 left/right。
+Result<CameraHandle> Simulator::CreateCamera(
+    TimestampNs ns, const Eigen::Isometry3d& T_BC) {
+  auto state = impl_->ValidateCameraCreation(ns, T_BC);
+  if (state.status != Status::Ok)
+    return {state.status, std::nullopt, state.message};
+  return impl_->CommitCameraCreationNoexcept(*state.value);
+}
+// CameraRegistry 用稳定 SensorId 和严格不回收的 next_auto_camera_index；
+// camera gate 逐个输出时刻 t 有效的所有 CameraHandle。
+```
+
+**边界与验证**：新注册/命名/历史化标定的时序与默认 cam0 规则按 LLD §5.1；禁止仅构建 StereoRig 两目。V05/V07。
+
+#### F16 — src/VisualSim/StressModel.hpp
+
+**改动前（来源真实原文，来源仓库不修改）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/StressModel.hpp L36–L43](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/StressModel.hpp#L36-L43)
+
+```cpp
+  };
+  angular_pulse(4,.2*strength);angular_pulse(4.5,-.4*strength);angular_pulse(5,.2*strength);
+  return m;
+}
+class PixelStress {
+public:
+  explicit PixelStress(const StressOptions &options):options_(options),random_(options.seed) {
+    if(!std::isfinite(options.pixel_sigma)||options.pixel_sigma<0||!std::isfinite(options.outlier_ratio)||options.outlier_ratio<0||options.outlier_ratio>1||!std::isfinite(options.motion_strength)||options.motion_strength<0)throw std::invalid_argument("Invalid VisualSim stress parameters");
+```
+
+**迁移后的目标片段（未实施代码草案）**：
+
+```cpp
+// 目标 include/visualsim/Trajectory.hpp：v1 只有两种角运动分支。
+struct AngularStationary {};
+struct AngularFixedAxisRotation {
+  Eigen::Vector3d axis_B;
+  double rate_radps;
+};
+using AngularMotionSpec =
+    std::variant<AngularStationary, AngularFixedAxisRotation>;
+// 不加入 AngularAcceleration/PixelStress 等隐藏模式。
+```
+
+**边界与验证**：不迁 StressModel，尤其不将脉冲非零角加速度伪装成 FixedAxisConstantRotation。新模式需要 SRS/LLD 升版。V03/V04。
+
+#### F17 — src/VisualSim/StressTests.cpp
+
+**改动前（来源真实原文，来源仓库不修改）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/StressTests.cpp L1–L8](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/StressTests.cpp#L1-L8)
+
+```cpp
+#include "StressModel.hpp"
+#include <iostream>
+#include <vector>
+#include <stdexcept>
+using namespace FastVIO::VisualSim;
+int main() {
+  try {
+    StressOptions options;PixelStress off(options);
+```
+
+**迁移后的目标片段（未实施代码草案）**：
+
+```cpp
+// 目标 tests/MotionHistoryTests.cpp：对允许的匀加速直线运动做导数检查。
+auto expected_p = p0 + v0 * dt + 0.5 * a_W * dt * dt;
+auto expected_v = v0 + a_W * dt;
+Require((motion.value->position_W_m - expected_p).norm() < 1e-10,
+        "analytical displacement");
+Require((motion.value->velocity_W_mps - expected_v).norm() < 1e-10,
+        "analytical speed");
+// 不测试未批准的角加速度脉冲与像素离群 Stress 模式。
+```
+
+**边界与验证**：示意用例中的 p0/v0/a_W/dt/motion 为测试建立的局部变量；新测试不引用源 StressModel.hpp。V04。
+
+#### F18 — src/VisualSim/VisualInertial.cpp
+
+**改动前（来源真实原文，来源仓库不修改）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/VisualInertial.cpp L35–L42](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/VisualInertial.cpp#L35-L42)
+
+```cpp
+
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp/time.hpp>
+
+#include "euroc_vio/DatumFast.hpp"
+#include "euroc_vio/DatumImu.hpp"
+#include "euroc_vio/DatumTruth.hpp"
+#include "euroc_vio/ErrorStateKalmanFilter.hpp"
+```
+
+**迁移后的目标片段（未实施代码草案）**：
+
+```cmake
+# 目标 CMakeLists.txt：只发现非 ROS 依赖。
+find_package(Eigen3 CONFIG REQUIRED)
+find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc imgcodecs)
+# 按需要 find_package(Sophus CONFIG REQUIRED)
+# 不执行 find_package(rclcpp)、ament_cmake 或 rosidl。
+target_link_libraries(visualsim PUBLIC Eigen3::Eigen ${OpenCV_LIBS})
+```
+
+**边界与验证**：此后半片段是目标构建方案，不是修改 VisualInertial.cpp；源文件仍只读且被排除。V01。
+
+#### F19 — src/VisualSim/VisualSim.cpp
+
+**改动前（来源真实原文，来源仓库不修改）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSim/VisualSim.cpp L184–L191](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/VisualSim.cpp#L184-L191)
+
+```cpp
+    std::error_code ec;
+    std::filesystem::remove_all(path_mav0_, ec);
+    if (std::filesystem::create_directories(path_mav0_, ec))
+    {
+      std::print(stderr, "[INFO] 工作目录创建成功: {}\n",
+                 std::filesystem::absolute(path_mav0_).string());
+    }
+    else
+```
+
+**迁移后的目标片段（未实施代码草案）**：
+
+```cpp
+// 目标 src/Simulator.cpp：所有参与传感器在最终提交前完成计算。
+Result<SampleBatch> Simulator::Generate(TimestampNs ns, SensorGate gate) {
+  if (!gate.camera && !gate.imu)
+    return {Status::Ok, SampleBatch{}, {}};
+  auto snapshot = impl_->EvaluateWithCalibration(ns);
+  if (snapshot.status != Status::Ok)
+    return {snapshot.status, std::nullopt, snapshot.message};
+  auto staged = impl_->StageAllSensors(*snapshot.value, ns, gate);
+  if (staged.status != Status::Ok)
+    return {staged.status, std::nullopt, staged.message};
+  impl_->CommitCountersNoexcept(*staged.value);
+  return std::move(staged.value->ready_result);
+}
+// 必须先准备最终 Result 的所有可抛异常分配，再提交计数器。
+// 只有显式 DatasetExporter 会处理文件目录，不执行 remove_all(mav0)。
+```
+
+**边界与验证**：StageAllSensors/CommitCountersNoexcept 是拟议私有事务例程；其强异常保证和返回 noexcept 条件需按 LLD §2.1 实现与故障注入验证。V07/V11。
+
+
+### 3.12.3 F20–F29：CameraIO 与加载器的真实片段、迁移及排除代码
+
+#### F20 — src/CameraIO/CameraFrameReader.cpp
+
+**改动前（源文件实际原文，来源只读）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/CameraIO/CameraFrameReader.cpp L32–L39](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/CameraIO/CameraFrameReader.cpp#L32-L39)
+
+```cpp
+
+std::vector<CameraIndexRecord> ReadCameraIndex(const std::filesystem::path &directory)
+{
+  const auto index_path = directory / "data.csv";
+  std::ifstream input{index_path};
+  if (!input) throw std::runtime_error("Cannot read camera index: " + index_path.string());
+  std::optional<bool> video;
+  std::vector<CameraIndexRecord> records;
+```
+
+**拟议替代或迁移后片段（未实施）**：
+
+```cpp
+// 目标仅负责新生成数据的导出，不再通过读取历史图像驱动仿真。
+Result<SampleBatch> Simulator::Generate(TimestampNs ns, SensorGate gate) {
+  auto state = impl_->EvaluateWithCalibration(ns);
+  if (state.status != Status::Ok)
+    return {state.status, std::nullopt, state.message};
+  return impl_->GenerateAtomic(*state.value, gate);
+}
+// CameraFrameReader / FFV1Decoder / ReadCameraIndex 不出现在目标运行库。
+```
+
+**排除/融合边界**：来源 Reader 不修改也不复制；目标可在独立测试中读取自己输出的 PNG，不能在生成器内缓存/回放旧帧。V01/V10。
+
+#### F21 — src/CameraIO/CameraFrameWriter.cpp
+
+**改动前（源文件实际原文，来源只读）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/CameraIO/CameraFrameWriter.cpp L58–L65](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/CameraIO/CameraFrameWriter.cpp#L58-L65)
+
+```cpp
+
+class ImageSequenceWriter final : public IndexedWriter
+{
+public:
+  ImageSequenceWriter(const std::filesystem::path &directory, cv::Size size) :
+    IndexedWriter{directory, size, "#timestamp [ns],filename"}
+  {
+    std::filesystem::create_directories(directory_ / "data");
+```
+
+**拟议替代或迁移后片段（未实施）**：
+
+```cpp
+// 目标 src/DatasetExporter.cpp：仅被显式导出 API 调用。
+Result<void> WriteCameraPng(const std::filesystem::path& output,
+                            const SensorFrame& frame) {
+  if (std::filesystem::exists(output))
+    return {Status::InvalidArgument, "output already exists"};
+  const cv::Mat& img = std::get<cv::Mat>(frame.payload);
+  if (img.type() != CV_8UC1)
+    return {Status::InvalidArgument, "expected grayscale image"};
+  if (!cv::imwrite(output.string(), img))
+    return {Status::InternalError, "PNG encoding failed"};
+  return {Status::Ok, {}};
+}
+// CSV 行必须使用 std::to_string(frame.timestamp_ns) 原值。
+```
+
+**排除/融合边界**：不得复制该文件的 VideoWriter/FFV1 分支；完整多文件导出还须设计暂存与提交，不能因中途写失败覆盖已有文件。V10/V11。
+
+#### F22 — src/CameraIO/FFV1Video.hpp
+
+**改动前（源文件实际原文，来源只读）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/CameraIO/FFV1Video.hpp L9–L16](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/CameraIO/FFV1Video.hpp#L9-L16)
+
+```cpp
+{
+class FFV1Encoder
+{
+public:
+  FFV1Encoder(const std::filesystem::path &path, cv::Size size, double fps);
+  ~FFV1Encoder();
+  void Write(const cv::Mat &image);
+  void Close();
+```
+
+**拟议替代或迁移后片段（未实施）**：
+
+```cmake
+# 目标仅链接成像/PNG 所需 OpenCV 组件，FFV1 头不安装。
+find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc imgcodecs)
+install(DIRECTORY include/visualsim/ DESTINATION include/visualsim)
+# 不安装 FFV1Video.hpp，不导出 FFV1Encoder/Decoder。
+```
+
+**排除/融合边界**：来源 FFV1Video.hpp 保持只读；如需视频另提需求，不能污染 v1 API。V01。
+
+#### F23 — src/CameraIO/FFV1Video.cpp
+
+**改动前（源文件实际原文，来源只读）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/CameraIO/FFV1Video.cpp L10–L17](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/CameraIO/FFV1Video.cpp#L10-L17)
+
+```cpp
+{
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavutil/error.h>
+#include <libavutil/mathematics.h>
+#include <libavutil/opt.h>
+}
+
+```
+
+**拟议替代或迁移后片段（未实施）**：
+
+```cmake
+# 目标 libvisualsim 的源与依赖白名单（不含 FFV1Video.cpp）。
+add_library(visualsim SHARED
+  src/Simulator.cpp
+  src/CameraRenderer.cpp
+  src/RoomRenderer.cpp
+  src/ImuModel.cpp)
+target_link_libraries(visualsim PUBLIC Eigen3::Eigen ${OpenCV_LIBS})
+# 无 libavcodec/libavformat/libavutil、CameraIO 子目录。
+```
+
+**排除/融合边界**：不是删来源文件，且目标并不因为需要 PNG 就引入 libav*。V01 ELF NEEDED 检查。
+
+#### F24 — src/CameraIO/CameraFrameIOTests.cpp
+
+**改动前（源文件实际原文，来源只读）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/CameraIO/CameraFrameIOTests.cpp L1–L8](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/CameraIO/CameraFrameIOTests.cpp#L1-L8)
+
+```cpp
+#include "euroc_vio/CameraFrameIO.hpp"
+#include "../VisualSlam/ImageDataLoader.hpp"
+
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <fstream>
+#include <iostream>
+```
+
+**拟议替代或迁移后片段（未实施）**：
+
+```cpp
+// 目标 tests/ExportTests.cpp：只针对本库显式生成的 PNG/CSV。
+const auto expected_ns = std::int64_t{123456789};
+auto frames = simulator.Generate(expected_ns, {.camera = true, .imu = false});
+Require(frames.status == Status::Ok, "generate failed");
+auto decoded = cv::imread(saved_png.string(), cv::IMREAD_UNCHANGED);
+Require(decoded.type() == CV_8UC1, "must retain CV_8UC1");
+Require(csv_timestamp_ns == expected_ns, "no re-derived timestamp");
+// 不引用 VisualSlam/ImageDataLoader、FFV1/libav*。
+```
+
+**排除/融合边界**：`simulator/saved_png/csv_timestamp_ns` 是该未来测试场景准备的对象；禁止复制源测试的 FFmpeg/VisualSlam 部分。V10。
+
+#### F25 — include/euroc_vio/CameraFrameIO.hpp
+
+**改动前（源文件实际原文，来源只读）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f include/euroc_vio/CameraFrameIO.hpp L13–L20](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/include/euroc_vio/CameraFrameIO.hpp#L13-L20)
+
+```cpp
+{
+enum class CameraOutputMode { Video, Images };
+
+// Storage references contain no sensor time. Only the CSV supplies timestamp_ns.
+struct CameraImageReference
+{
+  std::filesystem::path file;
+  std::optional<std::uint64_t> frame_index;
+```
+
+**拟议替代或迁移后片段（未实施）**：
+
+```cpp
+// 目标 include/visualsim/DatasetExporter.hpp：v1 只支持显式 PNG/CSV。
+struct DatasetExportOptions {
+  std::filesystem::path output_root;
+  bool allow_replace = false;
+};
+Result<void> ExportDataset(const DatasetExportOptions& options,
+                           const SampleBatch& frames);
+// 不导出 CameraImageReader、CameraOutputMode::Video 或 FFV1Encoder。
+```
+
+**排除/融合边界**：输出调用必须是显式 API；真正 exporter 要在写入前校验全部路径和帧，并保留 int64 时间。V01/V10。
+
+#### F26 — include/euroc_vio/AbstractLoader.hpp
+
+**改动前（源文件实际原文，来源只读）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f include/euroc_vio/AbstractLoader.hpp L13–L20](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/include/euroc_vio/AbstractLoader.hpp#L13-L20)
+
+```cpp
+
+struct AbstractLoader
+{
+  static std::string_view trim(std::string_view str)
+  {
+    const auto first = str.find_first_not_of(" \t\n\r\v\f");
+    if (first == std::string_view::npos)
+    {
+```
+
+**拟议替代或迁移后片段（未实施）**：
+
+```cpp
+// 目标 src/MotionConfigLoader.cpp：配置按 LLD §9.1 原子导入。
+Result<void> Simulator::LoadMotionConfig(
+    const std::filesystem::path& config) {
+  if (impl_->HasExplicitEventsOrSamples())
+    return {Status::EventHistoryFrozen, "instance already used"};
+  auto pending = ParseAndValidateV1Yaml(config);
+  if (pending.status != Status::Ok)
+    return {pending.status, pending.message};
+  return impl_->CommitTimelineNoexcept(std::move(*pending.value));
+}
+// 不继承 AbstractLoader，不接受混合历史输出作为运动真值。
+```
+
+**排除/融合边界**：Parser/Commit helpers 为必须实现的目标私有函数；实例状态先于文件解析判断，错误不提交半个事件。V02/V11。
+
+#### F27 — include/euroc_vio/DatumFast.hpp
+
+**改动前（源文件实际原文，来源只读）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f include/euroc_vio/DatumFast.hpp L22–L29](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/include/euroc_vio/DatumFast.hpp#L22-L29)
+
+```cpp
+
+struct DatumFast
+{
+  std::int64_t timestamp_;
+  // 角位移向量
+  Eigen::Vector3d angular_displacement_;
+  // 单位化平移向量
+  Eigen::Vector3d normalized_translation_;
+```
+
+**拟议替代或迁移后片段（未实施）**：
+
+```cpp
+// 目标 include/visualsim/Types.hpp：解析真值不是来源估计器 DatumFast。
+struct MotionState {
+  Eigen::Vector3d position_W_m;
+  Eigen::Matrix3d rotation_WB;
+  Eigen::Vector3d velocity_W_mps;
+  Eigen::Vector3d acceleration_W_mps2;
+  Eigen::Vector3d angular_velocity_B_radps;
+  Eigen::Vector3d angular_acceleration_B_radps2;
+  bool derivative_discontinuous;
+};
+```
+
+**排除/融合边界**：此处摘录冻结的 LLD §2 字段，不从 DatumFast 继承，也不链接 AbstractLoader。V04。
+
+#### F28 — include/euroc_vio/DatumImu.hpp
+
+**改动前（源文件实际原文，来源只读）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f include/euroc_vio/DatumImu.hpp L21–L28](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/include/euroc_vio/DatumImu.hpp#L21-L28)
+
+```cpp
+
+struct DatumImu
+{
+  std::int64_t timestamp_;
+  Eigen::Vector3d angular_velocity_;
+  Eigen::Vector3d linear_acceleration_;
+
+  static std::vector<DatumImu>
+```
+
+**拟议替代或迁移后片段（未实施）**：
+
+```cpp
+// 目标 include/visualsim/Types.hpp：IMU 当次观测直接值类型。
+struct ImuMeasurement {
+  Eigen::Vector3d angular_velocity_S_radps;
+  Eigen::Vector3d specific_force_S_mps2;
+};
+Result<SampleBatch> Simulator::Generate(TimestampNs at_ns, SensorGate gate);
+// 本库不接收 DatumImu 的历史积分/CSV 索引来替代物理真值。
+```
+
+**排除/融合边界**：必须匹配世界重力、T_BS、刚性杆臂计算公式而非预积分结果；V06-D。
+
+#### F29 — include/euroc_vio/DatumTruth.hpp
+
+**改动前（源文件实际原文，来源只读）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f include/euroc_vio/DatumTruth.hpp L21–L28](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/include/euroc_vio/DatumTruth.hpp#L21-L28)
+
+```cpp
+
+struct DatumTruth
+{
+  std::int64_t timestamp_;
+  Eigen::Vector3d position_;
+  Eigen::Quaterniond attitude_;
+  Eigen::Vector3d velocity_;
+  Eigen::Vector3d bias_gyro_;
+```
+
+**拟议替代或迁移后片段（未实施）**：
+
+```cpp
+// 目标：任何时刻的真值都按事件历史重算，不读取旧 DatumTruth。
+auto truth = simulator.GetMotionState(query_ns);
+if (truth.status != Status::Ok) return truth.status;
+const auto& p_W = truth.value->position_W_m;
+const auto& R_WB = truth.value->rotation_WB;
+// 导出时只写本次求值结果，不存储真值序列或帧位姿缓存。
+```
+
+**排除/融合边界**：此处局部 `simulator/query_ns` 由未来 caller 提供；源文件不迁移。V04/V09。
+
+
+### 3.12.4 F30–F38：估计器与 ROS 关联头的真实片段、替代及排除
+
+#### F30 — include/euroc_vio/ErrorStateKalmanFilter.hpp
+
+**改动前（真实来源代码）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f include/euroc_vio/ErrorStateKalmanFilter.hpp L39–L46](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/include/euroc_vio/ErrorStateKalmanFilter.hpp#L39-L46)
+
+```cpp
+template <typename value_type = double>
+class ErrorStateKalmanFilter
+{
+#pragma region PUBLIC_TYPE
+
+public:
+  using Vector2  = Eigen::Vector<value_type, 2>;
+  using Vector3  = Eigen::Vector<value_type, 3>;
+```
+
+**计划迁移后/排除后的目标片段（尚未实施）**：
+
+```cmake
+# 目标 CMake：仿真共享库不引入 ESKF 及其历史缓冲。
+target_sources(visualsim PRIVATE
+  src/Simulator.cpp src/MotionHistory.cpp
+  src/CameraRenderer.cpp src/ImuModel.cpp
+  src/RoomRenderer.cpp src/RayCaster.cpp)
+# 不添加 ErrorStateKalmanFilter.hpp / msckf.cpp / ZUPT.hpp。
+```
+
+**决策**：不迁入 ESKF 的状态/landmark/map/history；目标是传感器数据生产者，可供下游估计器调用。V01/V09。
+
+#### F31 — include/euroc_vio/SensorState.hpp
+
+**改动前（真实来源代码）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f include/euroc_vio/SensorState.hpp L31–L38](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/include/euroc_vio/SensorState.hpp#L31-L38)
+
+```cpp
+template <typename value_type>
+struct ImuState : public std::array<value_type, 10>
+{
+  ImuState() :
+    std::array<value_type, 10>{0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0}
+  {
+  }
+
+```
+
+**计划迁移后/排除后的目标片段（尚未实施）**：
+
+```cpp
+// 目标 MotionState 中坐标和时间语义按 LLD v1 保持单一。
+struct MotionState {
+  Eigen::Vector3d position_W_m;
+  Eigen::Matrix3d rotation_WB;
+  Eigen::Vector3d velocity_W_mps;
+  Eigen::Vector3d acceleration_W_mps2;
+  Eigen::Vector3d angular_velocity_B_radps;
+  Eigen::Vector3d angular_acceleration_B_radps2;
+  bool derivative_discontinuous;
+};
+```
+
+**决策**：不复制估计器数组 ImuState/ImuDerivative 来代替解析运动真值。V04/V06。
+
+#### F32 — include/euroc_vio/SensorYaml.hpp
+
+**改动前（真实来源代码）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f include/euroc_vio/SensorYaml.hpp L26–L33](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/include/euroc_vio/SensorYaml.hpp#L26-L33)
+
+```cpp
+
+struct SensorYaml
+{
+  // 姿态, 变换矩阵
+  Eigen::Matrix4d transform_matrix_{Eigen::Matrix4d::Identity()};
+  // 图像分辨率 [宽, 高] (相机节点专用, 默认 0x0)
+  Eigen::Vector2i resolution_{Eigen::Vector2i::Zero()};
+  // 针孔内参 [fu, fv, cu, cv] (相机节点专用)
+```
+
+**计划迁移后/排除后的目标片段（尚未实施）**：
+
+```cpp
+// 目标 src/MotionConfigLoader.cpp：schema v1 是 baseline + 带整数纳秒的 events。
+YAML::Node document = YAML::LoadFile(path.string());
+if (!document["schema_version"] ||
+    document["schema_version"].as<int>() != 1)
+  return {Status::InvalidConfigSchema, "unsupported schema"};
+const auto events = document["events"];
+// 对每项 timestamp_ns 必须验证原 YAML 标量为十进制整数，
+// 再解析 op/value；先 baseline(room/pose/imu) 再同刻 events。
+// 全部验证成功后原子提交，不能复用旧 ReadSensorYaml 当运动配置。
+```
+
+**决策**：补重复键/未知字段/类型和时间验证及 EventHistoryFrozen 边界；这不是来源 SensorYaml 的原代码。V02/V11。
+
+#### F33 — include/euroc_vio/ZUPT.hpp
+
+**改动前（真实来源代码）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f include/euroc_vio/ZUPT.hpp L92–L99](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/include/euroc_vio/ZUPT.hpp#L92-L99)
+
+```cpp
+template <typename value_type, std::size_t WindowSize = 64>
+class ZUPT
+{
+public:
+  using chunk_type  = Eigen::Vector<value_type, 3>;
+  using data_type   = std::pair<chunk_type, chunk_type>;
+  using window_type = CircularBuffer<data_type, WindowSize>;
+
+```
+
+**计划迁移后/排除后的目标片段（尚未实施）**：
+
+```cpp
+// 目标静止模式必须来自用户配置，而不是 IMU/ZUPT 推断。
+Result<void> Simulator::SetLinearMotion(TimestampNs ns,
+                                         const LinearMotionSpec& mode) {
+  return impl_->AppendValidatedEvent(ns, SetLinearEvent{mode});
+}
+auto ok = simulator.SetLinearMotion(
+    2'000'000'000LL, LinearStationary{});
+// 不引入 ZUPT 阈值、缓存窗口或自动切换 motion mode。
+```
+
+**决策**：旧 ZUPT 与 CircularBuffer 排除；`simulator` 为未来调用者局部对象。V03/V09。
+
+#### F34 — include/euroc_vio/StereoObservation.hpp
+
+**改动前（真实来源代码）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f include/euroc_vio/StereoObservation.hpp L10–L17](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/include/euroc_vio/StereoObservation.hpp#L10-L17)
+
+```cpp
+template <typename value_type = double>
+struct StereoObservation
+{
+  using Vector2 = Eigen::Vector<value_type, 2>;
+  using Vector3 = Eigen::Vector<value_type, 3>;
+
+  // 路标点 ID
+  std::uint32_t feature_id_{0};
+```
+
+**计划迁移后/排除后的目标片段（尚未实施）**：
+
+```cpp
+// 目标 SensorFrame 不固定为两个相机的匹配点列表。
+struct SensorFrame {
+  TimestampNs timestamp_ns;
+  SensorId sensor_id;
+  std::string sensor_name;  // cam0、cam1、调用者自定义名
+  std::uint64_t frame_number;
+  std::variant<cv::Mat, ImuMeasurement> payload;
+};
+// 一次 camera gate 输出在 at_ns 时存在的所有 CameraHandle 的图像。
+```
+
+**决策**：不迁移双目观测及 ESKF 类型；不同相机成像无共同可见点交集限制。V05/V07。
+
+#### F35 — include/euroc_vio/CircularBuffer.hpp
+
+**改动前（真实来源代码）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f include/euroc_vio/CircularBuffer.hpp L17–L24](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/include/euroc_vio/CircularBuffer.hpp#L17-L24)
+
+```cpp
+template <typename T, std::size_t N>
+class CircularBuffer
+{
+  static_assert(N > 0, "Capacity must be positive");
+  static_assert((N & (N - 1)) == 0,
+                "Capacity must be power of two for bitmask optimization");
+
+public:
+```
+
+**计划迁移后/排除后的目标片段（尚未实施）**：
+
+```cpp
+// 目标 Simulator::Impl：只持久保存事件和最小逐传感器协议变量。
+struct SensorSequence {
+  std::optional<TimestampNs> last_successful_ns = std::nullopt;
+  std::uint64_t next_frame_number = 0;
+};
+std::vector<ChangeRecord> change_history;
+std::unordered_map<SensorId, SensorSequence> frame_sequence;
+// 禁止 CircularBuffer<cv::Mat>、历史 Pose/IMU/RayHit 窗口。
+```
+
+**决策**：事件日志属于用户修改历史；不得把它改造成结果缓存。V09。
+
+#### F36 — include/euroc_vio/VisionMode.hpp
+
+**改动前（真实来源代码）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f include/euroc_vio/VisionMode.hpp L8–L15](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/include/euroc_vio/VisionMode.hpp#L8-L15)
+
+```cpp
+// 视觉模式: 数据集相机数目
+enum class VisionMode
+{
+  kStereo, // cam0 + cam1
+  kMono    // 仅 cam0 或仅 cam1
+};
+
+// 检测数据集模式: cam1/data.csv 存在且非空 → 双目, 否则单目
+```
+
+**计划迁移后/排除后的目标片段（尚未实施）**：
+
+```cpp
+// 目标 include/visualsim/Types.hpp：生成门控与视觉估计模式无关。
+struct SensorGate {
+  bool camera = false; // 当时注册的全部相机
+  bool imu = false;
+};
+const SensorGate only_imu{.camera=false, .imu=true};
+auto result = simulator.Generate(at_ns, only_imu);
+// 无 VisionMode、ImageDataLoader、双目读入模式依赖。
+```
+
+**决策**：`simulator/at_ns` 为未来调用者提供。仅通过冻结 SensorGate 表达门控。V07。
+
+#### F37 — include/euroc_vio/pch.hpp
+
+**改动前（真实来源代码）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f include/euroc_vio/pch.hpp L14–L21](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/include/euroc_vio/pch.hpp#L14-L21)
+
+```cpp
+#include <rclcpp/publisher.hpp>
+#include <rclcpp/rclcpp.hpp>
+#include <rclcpp/time.hpp>
+#include <cv_bridge/cv_bridge.hpp>
+#include <geometry_msgs/msg/pose_stamped.hpp>
+#include <geometry_msgs/msg/transform.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
+#include <message_filters/subscriber.hpp>
+```
+
+**计划迁移后/排除后的目标片段（尚未实施）**：
+
+```cmake
+# 目标 CMake 只导出 visualsim 公共头和非 ROS 库。
+target_include_directories(visualsim PUBLIC
+  "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>"
+  "$<INSTALL_INTERFACE:include>")
+target_link_libraries(visualsim PUBLIC Eigen3::Eigen)
+# 不执行 target_precompile_headers(... euroc_vio/pch.hpp)。
+# 不含 ament、rclcpp、cv_bridge、message_filters。
+```
+
+**决策**：严格禁止将来源 PCH/common_pch 带入目标编译依赖；Linux .so 消费者无需 ROS。V01。
+
+#### F38 — src/VisualSlam/ImageDataLoader.hpp
+
+**改动前（真实来源代码）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f src/VisualSlam/ImageDataLoader.hpp L9–L16](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSlam/ImageDataLoader.hpp#L9-L16)
+
+```cpp
+#include <opencv2/core.hpp>
+#include "euroc_vio/CameraFrameIO.hpp"
+#include "euroc_vio/VisionMode.hpp"
+
+namespace FastVIO
+{
+template <typename E = CameraImageReference>
+struct MonocularFrame
+```
+
+**计划迁移后/排除后的目标片段（尚未实施）**：
+
+```cpp
+// 目标 tests/ExportTests.cpp 只验证新产生的 PNG，无 VisualSlam。
+const cv::Mat restored =
+    cv::imread(exported_image_path.string(), cv::IMREAD_UNCHANGED);
+Require(!restored.empty(), "PNG not readable");
+Require(restored.type() == CV_8UC1, "PNG image must be grayscale");
+Require(restored.cols == camera.width &&
+        restored.rows == camera.height, "wrong image resolution");
+// 此处 exported_image_path/camera 为测试提供的已初始化局部对象。
+```
+
+**决策**：不复制 VisualSlam 模块或 CameraFrameReader；导出测试不依赖来源仓库。V10。
+
+
+### 3.13 B01–B08：构建配置及脚本的源代码前/后对照
+
+**所有改动前块都来自固定 GitHub 提交**；来源 ros2-vio-node 的 CMake 文件仅用于比照，不在源仓库修改。B03 同时涉及三个目标 PowerShell 脚本，后面另补 run/clean 的原文证据。
+
+#### B01 — ncut-d1z/VisualSim/CMakeLists.txt
+
+**改动前（真实 目标 文件）**：[ncut-d1z/VisualSim@dbfab8e6d6b7 L12–L16](https://github.com/ncut-d1z/VisualSim/blob/dbfab8e6d6b7619c72a0050c8a760d748d6e9628/CMakeLists.txt#L12-L16)
+
+```cmake
+
+add_executable(visual_sim src/main.cpp)
+target_include_directories(visual_sim PRIVATE src ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(visual_sim PRIVATE Eigen3::Eigen ${OpenCV_LIBS})
+
+```
+
+**拟议改动后（目标仓库新代码/删除指令；未执行）**：
+
+```cmake
+cmake_minimum_required(VERSION 4.3.4)
+project(VisualSim VERSION 1.0.0 LANGUAGES CXX)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  message(FATAL_ERROR "VisualSim supports Linux only")
+endif()
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+find_package(Eigen3 CONFIG REQUIRED)
+find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc imgcodecs)
+add_library(visualsim SHARED
+  src/Simulator.cpp src/MotionHistory.cpp src/CameraRenderer.cpp
+  src/RoomRenderer.cpp src/ImuModel.cpp src/RayCaster.cpp)
+add_library(VisualSim::VisualSim ALIAS visualsim)
+target_compile_features(visualsim PUBLIC cxx_std_23)
+set_target_properties(visualsim PROPERTIES
+  EXPORT_NAME VisualSim VERSION ${PROJECT_VERSION} SOVERSION 1)
+target_include_directories(visualsim PUBLIC
+  "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>"
+  "$<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>")
+target_link_libraries(visualsim PUBLIC Eigen3::Eigen)
+target_link_libraries(visualsim PUBLIC ${OpenCV_LIBS})
+install(TARGETS visualsim EXPORT VisualSimTargets)
+install(EXPORT VisualSimTargets NAMESPACE VisualSim::
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/VisualSim")
+# 还需生成 VisualSimConfig.cmake/Version，使用 configure_package_config_file
+# 和 write_basic_package_version_file，然后 install(FILES ...)。
+```
+
+**判断**：这是包含 SHARED 核心和安装导出骨架的草案；Config.cmake 内容、Pimpl/ABI、RPATH 与依赖 `find_dependency` 必须在 P1 补全并通过外部消费者测试。
+
+#### B02 — ncut-d1z/VisualSim/CMakePresets.json
+
+**改动前（真实 目标 文件）**：[ncut-d1z/VisualSim@dbfab8e6d6b7 L3–L11](https://github.com/ncut-d1z/VisualSim/blob/dbfab8e6d6b7619c72a0050c8a760d748d6e9628/CMakePresets.json#L3-L11)
+
+```json
+  "configurePresets": [{
+    "name": "windows",
+    "displayName": "Windows x64 / vcpkg",
+    "generator": "Visual Studio 18 2026",
+    "architecture": "x64",
+    "binaryDir": "${sourceDir}/out/build",
+    "cacheVariables": {
+      "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "VCPKG_TARGET_TRIPLET": "x64-windows",
+```
+
+**拟议改动后（目标仓库新代码/删除指令；未执行）**：
+
+```json
+{
+  "version": 6,
+  "configurePresets": [{
+    "name": "ubuntu24-release",
+    "generator": "Ninja",
+    "binaryDir": "${sourceDir}/build",
+    "cacheVariables": {
+      "CMAKE_BUILD_TYPE": "Release",
+      "BUILD_TESTING": "ON"
+    }
+  }],
+  "buildPresets": [{"name": "ubuntu24-release",
+                    "configurePreset": "ubuntu24-release"}],
+  "testPresets": [{"name": "ubuntu24-release",
+                   "configurePreset": "ubuntu24-release"}]
+}
+```
+
+**判断**：明确删除 Visual Studio/x64-windows/Windows 盘符；新预设可被调用方按需覆盖编译器和安装前缀，Ninja 须存在。P1。
+
+#### B03 — ncut-d1z/VisualSim/build.ps1
+
+**改动前（真实 目标 文件）**：[ncut-d1z/VisualSim@dbfab8e6d6b7 L7–L11](https://github.com/ncut-d1z/VisualSim/blob/dbfab8e6d6b7619c72a0050c8a760d748d6e9628/build.ps1#L7-L11)
+
+```powershell
+
+    cmake --preset windows
+    if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed.' }
+
+    cmake --build --preset windows --clean-first
+```
+
+**拟议改动后（目标仓库新代码/删除指令；未执行）**：
+
+```bash
+# 目标仓库在实施 Linux-only 构建时执行；此命令目前未执行。
+git rm -- build.ps1 run.ps1 clean.ps1
+
+# Linux 运行流程由 README/CMake Presets 表达（非自动写盘）：
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+cmake --install build --prefix "$HOME/opt/VisualSim"
+```
+
+**判断**：此组删除操作影响目标仓库三个 PowerShell 文件，来源仓库没有任何修改。还需独立核验 run.ps1/clean.ps1 的 Windows 行为。
+
+**B03 的另一份原始文件片段：** [run.ps1 L11–L17](https://github.com/ncut-d1z/VisualSim/blob/dbfab8e6d6b7619c72a0050c8a760d748d6e9628/run.ps1#L11-L17)
+
+```powershell
+        Write-Host 'visual_sim.exe was not found. Building the project first...'
+        & (Join-Path $PSScriptRoot 'build.ps1')
+        if ($LASTEXITCODE -ne 0) {
+            throw 'build.ps1 failed.'
+        }
+    }
+
+```
+
+**B03 的另一份原始文件片段：** [clean.ps1 L20–L26](https://github.com/ncut-d1z/VisualSim/blob/dbfab8e6d6b7619c72a0050c8a760d748d6e9628/clean.ps1#L20-L26)
+
+```powershell
+
+  Remove-Item -LiteralPath $resolvedBuild -Recurse -Force
+  Write-Host "Removed build directory: $resolvedBuild"
+} finally {
+  Pop-Location
+}
+
+```
+
+#### B04 — ncut-d1z/VisualSim/vcpkg.json
+
+**改动前（真实 目标 文件）**：[ncut-d1z/VisualSim@dbfab8e6d6b7 L4–L12](https://github.com/ncut-d1z/VisualSim/blob/dbfab8e6d6b7619c72a0050c8a760d748d6e9628/vcpkg.json#L4-L12)
+
+```json
+  "builtin-baseline": "6e856794aebd1ee877acb74c9264d9552903c6fe",
+  "dependencies": [
+    "eigen3",
+    {
+      "name": "opencv4",
+      "default-features": false,
+      "features": ["jpeg", "png"]
+    }
+  ]
+```
+
+**拟议改动后（目标仓库新代码/删除指令；未执行）**：
+
+```cmake
+# 默认目标：Linux 使用 find_package 解析非 ROS 依赖。
+find_package(Eigen3 CONFIG REQUIRED)
+find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc imgcodecs)
+# 若 v1 Loader 选用 yaml-cpp，则实际编译目标应 find_package(yaml-cpp CONFIG REQUIRED)。
+# 若 Linux 构建完全不使用 vcpkg，计划中的代码改动为删除 vcpkg.json；
+# 如果保留 Linux vcpkg，只能作为可选路径，禁止 x64-windows triplet。
+```
+
+**判断**：此文件后续保留/删除的实际决策须由 P0 依赖取证支持；不可因删掉 Windows preset 误认为已经完成 Linux 编译。
+
+#### B05 — ncut-d1z/VisualSim/README.md
+
+**改动前（真实 目标 文件）**：[ncut-d1z/VisualSim@dbfab8e6d6b7 L141–L147](https://github.com/ncut-d1z/VisualSim/blob/dbfab8e6d6b7619c72a0050c8a760d748d6e9628/README.md#L141-L147)
+
+```powershell
+
+### Windows 11 + CMake + vcpkg
+
+The Windows build environment follows
+`ncut-d1z/vis-spherical-flow`:
+
+- Windows 11 x64
+```
+
+**拟议改动后（目标仓库新代码/删除指令；未执行）**：
+
+```markdown
+# README 中的 Ubuntu 24.04 Linux-only 使用示例（实施后方可执行）。
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$HOME/opt/VisualSim"
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+cmake --install build
+# 下游工程：
+cmake -S consumer -B consumer-build \
+  -DCMAKE_PREFIX_PATH="$HOME/opt/VisualSim"
+cmake --build consumer-build -j
+```
+
+**判断**：实施时删除 README 的 Windows 11/PowerShell/vcpkg x64 教程，新增按 YAML 定义轨迹、动态 camX、Generate/Raycast 的完整示例，并注明禁隐式数据覆盖。
+
+#### B06 — ncut-d1z/ros2-vio-node/CMakeLists.txt
+
+**改动前（真实 来源只读 文件）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f L28–L35](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/CMakeLists.txt#L28-L35)
+
+```cmake
+# --- 查找依赖 ---
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
+find_package(message_filters REQUIRED)
+```
+
+**拟议改动后（目标仓库新代码/删除指令；未执行）**：
+
+```cmake
+# 只修改目标 VisualSim/CMakeLists.txt：不复用来源 ROS 主工程。
+project(VisualSim LANGUAGES CXX)
+find_package(Eigen3 CONFIG REQUIRED)
+find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc imgcodecs)
+# 不调用 ament_package()、ament_target_dependencies()；
+# 不 find_package(rclcpp/rosidl/cv_bridge)。
+add_library(visualsim SHARED src/Simulator.cpp src/MotionHistory.cpp)
+```
+
+**判断**：来源顶层 CMake 只读；新项目不使用 ROS workspace 作为构建或安装前提。V01。
+
+#### B07 — ncut-d1z/ros2-vio-node/src/VisualSim/CMakeLists.txt
+
+**改动前（真实 来源只读 文件）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f L7–L14](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/VisualSim/CMakeLists.txt#L7-L14)
+
+```cmake
+find_package(OpenCV REQUIRED)
+add_subdirectory(../CameraIO ${CMAKE_CURRENT_BINARY_DIR}/camera_io)
+add_executable(VisualSim VisualSim.cpp)
+target_compile_features(VisualSim PRIVATE cxx_std_23)
+target_include_directories(VisualSim PRIVATE ../../include ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(VisualSim PRIVATE camera_frame_io Eigen3::Eigen Sophus::Sophus ${OpenCV_LIBS})
+if(BUILD_TESTING)
+  add_executable(VisualSimStressTests StressTests.cpp)
+```
+
+**拟议改动后（目标仓库新代码/删除指令；未执行）**：
+
+```cmake
+# 只在目标工程定义安装式共享库，而非复制 standalone 可执行程序。
+add_library(visualsim SHARED
+  src/Simulator.cpp
+  src/RoomRenderer.cpp
+  src/CameraRenderer.cpp
+  src/ImuModel.cpp)
+target_compile_features(visualsim PUBLIC cxx_std_23)
+target_link_libraries(visualsim PUBLIC Eigen3::Eigen)
+# 不添加 ../CameraIO、VisualSimStressTests 或 FFmpeg。
+```
+
+**判断**：CMake target 新增前需完整补齐内部源文件及导出安装规则；来源的 cxx_std_23 仅作为真实语言需求线索。
+
+#### B08 — ncut-d1z/ros2-vio-node/src/CameraIO/CMakeLists.txt
+
+**改动前（真实 来源只读 文件）**：[ncut-d1z/ros2-vio-node@fd1e08174d6f L13–L20](https://github.com/ncut-d1z/ros2-vio-node/blob/fd1e08174d6f8e1cc398aa7ffcb87d1ed97edb03/src/CameraIO/CMakeLists.txt#L13-L20)
+
+```cmake
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(CAMERA_FFMPEG REQUIRED IMPORTED_TARGET
+    libavcodec
+    libavformat
+    libavutil)
+  set(CAMERA_FFMPEG_TARGET PkgConfig::CAMERA_FFMPEG)
+else()
+  # Native Windows SDK fallback (set CMAKE_PREFIX_PATH to the FFmpeg SDK).
+```
+
+**拟议改动后（目标仓库新代码/删除指令；未执行）**：
+
+```cmake
+# 目标使用 OpenCV PNG/图像依赖，不链接来源 CameraIO/libav。
+find_package(OpenCV CONFIG REQUIRED COMPONENTS core imgproc imgcodecs)
+target_link_libraries(visualsim PUBLIC ${OpenCV_LIBS})
+# 不使用 PkgConfig::CAMERA_FFMPEG 或 add_subdirectory(src/CameraIO)。
+# 使用显式 DatasetExporter 写 PNG/CSV，不提供 FFV1 视频输出。
+```
+
+**判断**：来源 src/CameraIO/CMakeLists.txt 保持原样；目标需在 P1/V01 的 ELF NEEDED 中核对没有 FFmpeg 的强制引入。
+
+
+### 3.14 新增运行时内核的进一步代码草案
+
+F01–F38 给出了每个**已有文件**的真实片段和目标替代方案。但即时式运动栈、连续 Room 求交、Brownian-bridge 随机过程在两个原仓库中均**没有现成的符合 v1 的实现**。因此它们的“修改前”不是某个虚构函数，而是 F02/F12、F01/F14、F09 已举证的旧接口。下列示例作为**未来新增模块的代码骨架**，尚未编译，必须以 LLD v1 的公开签名、错误顺序和强状态保证为准。
+
+#### N01 事件入栈、覆盖、出栈
+
+修改前：目标只存在 Trajectory::pose(double)，来源 PathManager 只支持固定路径拼接（F02/F12）。
+
+计划在 src/MotionHistory.cpp 实现：
+
+~~~cpp
+struct ActiveModes {
+  LinearMotionSpec linear = LinearStationary{};
+  AngularMotionSpec angular = AngularStationary{};
+};
+using ScopeStack = std::vector<ActiveModes>; // Evaluate 调用中的临时重放状态
+
+Result<void> ApplyMotionEvent(ActiveModes& active, ScopeStack& stack,
+                              const MotionEvent& event,
+                              const MotionState& at_event) {
+  if (event.op == MotionOp::Begin) {
+    stack.push_back(active);
+  } else if (event.op == MotionOp::End) {
+    if (stack.empty())
+      return {Status::UnmatchedMotionScope, "unmatched EndMotionEnd"};
+    const ActiveModes restored = stack.back();
+    auto check = ValidateCircularReactivation(at_event, restored.linear);
+    if (check.status != Status::Ok) return check;
+    active = restored;  // 恢复模式参数，不倒退当前位置和朝向
+    stack.pop_back();
+  } else if (event.op == MotionOp::SetLinear) {
+    active.linear = event.linear;   // 同类覆盖
+  } else if (event.op == MotionOp::SetAngular) {
+    active.angular = event.angular; // 线运动不受影响
+  }
+  return {Status::Ok, {}};
+}
+~~~
+
+这里的 MotionEvent/MotionOp、ValidateCircularReactivation 是**待补齐的内部结构和函数**；事件提交时还须保证全部验证成功再追加历史。重算时每到事件时间先解析积分上一段，再应用该时刻按 insertion_order 排序的所有事件，最后积分到查询时间。不得缓存已求过的姿态。V02–V04。
+
+#### N02 完整的 Room 六面求交内核
+
+修改前：两个 Room.hpp 都只有六面离散格点，没有任意真实方向的连续面求交（F01/F14）。
+
+计划在 src/RayCaster.cpp 实现：
+
+~~~cpp
+struct Candidate {
+  Eigen::Vector3d point_W_m;
+  double range_m;
+  unsigned face_id;
+};
+std::optional<Candidate> FirstHitRoom(
+    const Eigen::Vector3d& origin,
+    const Eigen::Vector3d& direction,
+    const RoomConfig& room) {
+  const Eigen::Vector3d dims{room.depth_m, room.width_m, room.height_m};
+  const double diag = dims.norm();
+  const double eps_distance = std::max(1e-9, diag * 1e-12);
+  const double eps_boundary = diag * 1e-12;
+  std::optional<Candidate> best;
+  for (unsigned face = 0; face < 6; ++face) {
+    const int axis = static_cast<int>(face / 2); // x0,xD,y0,yW,z0,zH
+    if (std::abs(direction[axis]) <= 1e-12) continue;
+    const double plane = (face % 2 == 0) ? 0.0 : dims[axis];
+    const double lambda = (plane - origin[axis]) / direction[axis];
+    if (!(lambda > eps_distance)) continue;
+    const Eigen::Vector3d p = origin + lambda * direction;
+    bool inside = true;
+    for (int j = 0; j < 3; ++j) {
+      if (j == axis) continue;
+      inside &= p[j] >= -eps_boundary &&
+                p[j] <= dims[j] + eps_boundary;
+    }
+    if (inside && (!best || lambda < best->range_m))
+      best = Candidate{p, lambda, face}; // 等距时保留先遍历的面
+  }
+  return best;
+}
+~~~
+
+调用前 Raycast 还必须依 LLD §7 的整体/逐条错误优先级检查：时间、相机身份、单位向量、正 z、实际畸变后成像视域。空 bearing 向量经整体校验后成功返回空结果。N02 是几何核，不是完整的 Raycast 公共方法。V08。
+
+#### N03 相机径向切向畸变与外参方向
+
+修改前：来源 Camera.hpp 只有针孔 K、T_SB 投影（F05）。
+
+计划在 src/CameraRenderer.cpp 新增：
+
+~~~cpp
+Eigen::Vector2d DistortRadtan(
+    double x, double y, const std::array<double, 4>& c) {
+  const double r2 = x*x + y*y;
+  const double radial = 1.0 + c[0]*r2 + c[1]*r2*r2;
+  return {
+    x*radial + 2.0*c[2]*x*y + c[3]*(r2 + 2.0*x*x),
+    y*radial + c[2]*(r2 + 2.0*y*y) + 2.0*c[3]*x*y
+  };
+}
+// 目标 T_BC 是相机到载体；与来源 sensor_from_body_(T_SB) 方向相反。
+const Eigen::Isometry3d T_WC = T_WB * camera.T_BC;
+const Eigen::Vector3d X_C = T_WC.inverse() * X_W;
+if (X_C.z() > 0.0) {
+  const Eigen::Vector2d q =
+      DistortRadtan(X_C.x()/X_C.z(), X_C.y()/X_C.z(), camera.radtan);
+  const Eigen::Vector3d pixel_h =
+      camera.K * Eigen::Vector3d{q.x(),q.y(),1.0};
+}
+~~~
+
+T_WB、X_W、camera 在此为调用方临时变量；真实实现需检查非有限值和图像范围，并按每个时刻、每个相机标定单独计算。V05/V08。
+
+#### N04 IMU 外参杆臂与比力
+
+修改前：目标旧 IMU 主要考虑同中心重力比力；来源加噪有状态，不符合需求（F03/F09）。
+
+计划在 src/ImuModel.cpp 新增：
+
+~~~cpp
+ImuMeasurement IdealImu(const MotionState& motion,
+                        const ImuCalibration& imu) {
+  const Eigen::Matrix3d R_BS = imu.T_BS.rotation();
+  const Eigen::Vector3d arm_B = imu.T_BS.translation();
+  const Eigen::Vector3d omega_B = motion.angular_velocity_B_radps;
+  const Eigen::Vector3d alpha_B = motion.angular_acceleration_B_radps2;
+  const Eigen::Vector3d a_WS = motion.acceleration_W_mps2
+      + motion.rotation_WB *
+        (alpha_B.cross(arm_B) + omega_B.cross(omega_B.cross(arm_B)));
+  const Eigen::Vector3d gravity_W{0.0,0.0,-9.81};
+  return {
+    R_BS.transpose() * omega_B,
+    R_BS.transpose() * motion.rotation_WB.transpose() * (a_WS - gravity_W)
+  };
+}
+~~~
+
+默认不叠加随机噪声；启用时才在单次结果上按 LLD §6.2 加白噪声/偏置，所有计算使用查询时刻有效的 IMU 标定。V06-D。
+
+#### N05 Brownian-bridge 的时间寻址骨架
+
+修改前：来源 ImuNoiseModel.hpp 在每次 Corrupt 调用时将 gyro_bias_ 累加，且通过固定 sqrt_rate_ 离散白噪。无法随机访问历史时刻（F09）。
+
+计划保留完整整数纳秒时间键，并采用已冻结的 SplitMix64/Box–Muller 流：
+
+~~~cpp
+std::uint64_t SplitMix64(std::uint64_t x) {
+  x += 0x9E3779B97F4A7C15ULL;
+  x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+  x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+  return x ^ (x >> 31);
+}
+// GaussianForRoot 与 GaussianForNode 按 LLD §6.2 的固定域标签、
+// seed、epoch、轴、节点相对起点和层级混合键，并执行 Box–Muller。
+// 下方不缓存树节点或各时间偏置：
+double BrownianAt(std::uint64_t relative_ns, std::uint64_t seed,
+                  std::uint64_t epoch, unsigned axis) {
+  std::uint64_t start = 0;
+  std::uint64_t width = (1ULL << 63);
+  double delta = std::sqrt(static_cast<double>(width)*1e-9)
+      * GaussianForRoot(seed, epoch, axis);
+  double accumulated = 0.0;
+  while (width > 1) {
+    const std::uint64_t half = width / 2;
+    const double left = delta / 2.0
+        + std::sqrt(static_cast<double>(width)*1e-9/4.0)
+          * GaussianForNode(seed, epoch, axis, start, width);
+    if (relative_ns >= start + half) {
+      accumulated += left;
+      start += half;
+      delta -= left;
+    } else {
+      delta = left;
+    }
+    width = half;
+  }
+  return accumulated;
+}
+~~~
+
+实施时必须补足 GaussianForRoot/GaussianForNode 的**全部冻结键字段与高斯比特流**，在调用前检查 epoch_ns <= query_ns 且不发生 int64 溢出，并对极值时间、8 种子、4 组卡方统计执行 V06-D/V06-S。此代码只是 Brownian 递归核心，不能据此宣布噪声模块已完成。
+
+#### N06 逐传感器时序与强异常保证
+
+修改前：两个旧程序均按浮点秒循环生成 CSV，并不支持 v1 对每台相机/imu0 的协议状态原子提交（F03/F19）。
+
+计划新增明确的逐流控制结构：
+
+~~~cpp
+struct SensorSequence {
+  std::optional<TimestampNs> last_successful_ns = std::nullopt;
+  std::uint64_t next_frame_number = 0;
+};
+Status CheckTimestamp(const SensorSequence& s, TimestampNs t) {
+  if (!s.last_successful_ns) return Status::Ok;
+  if (t == *s.last_successful_ns) return Status::DuplicateTimestamp;
+  if (t <  *s.last_successful_ns) return Status::OutOfOrderTimestamp;
+  return Status::Ok;
+}
+// Generate 批次：先解析时间线得到 at_ns 有效的相机集合。
+// 全部成员时间校验、帧图像分配、IMU 计算、Result 组装完成以后，
+// 再执行不可抛异常的状态提交；部分失败不得消耗任何一个帧号。
+~~~
+
+ResetSamplingSession 将所有注册传感器（包括曾用的虚拟默认 cam0）恢复为 nullopt 和 0；运动/标定修改历史不清除。V07/V11。
+
+#### N07 YAML 严格时间戳读取
+
+修改前：来源 SensorYaml.hpp 只解析单个 EuRoC 标定文件，而不是事件时间线（F32）。
+
+拟在 src/MotionConfigLoader.cpp 中实现：
+
+~~~cpp
+Result<TimestampNs> ParseTimestampNs(const YAML::Node& node) {
+  if (!node || !node.IsScalar())
+    return {Status::InvalidConfigSchema, std::nullopt, "ns scalar required"};
+  const std::string s = node.Scalar();
+  if (s.empty() || !std::all_of(s.begin(), s.end(),
+         [](unsigned char c) { return c >= '0' && c <= '9'; }))
+    return {Status::InvalidConfigSchema, std::nullopt, "decimal integer ns"};
+  TimestampNs t = 0;
+  const auto [end, ec] = std::from_chars(s.data(), s.data()+s.size(), t);
+  if (ec != std::errc{} || end != s.data()+s.size())
+    return {Status::InvalidConfigSchema, std::nullopt, "ns overflow"};
+  return {Status::Ok, t, {}};
+}
+// LoadMotionConfig 必须首先检查实例未使用，否则 EventHistoryFrozen。
+// 配置按 baseline(room→pose→imu) 先于同刻 events 的顺序暂存；
+// 检查所有 schema、字段和作用域，成功后原子提交。
+~~~
+
+此段只覆盖时间字段解析；不能代替 LLD §9.1 对重复键、未知键、矩阵、四元数和全事务的完整校验。V02/V11。
+
+#### N08 安装式 CMake Package Config
+
+修改前：目标仅有 add_executable(visual_sim src/main.cpp)，没有安装式 export（B01）。
+
+未来新增 cmake/VisualSimConfig.cmake.in：
+
+~~~cmake
+@PACKAGE_INIT@
+include(CMakeFindDependencyMacro)
+find_dependency(Eigen3 CONFIG REQUIRED)
+find_dependency(OpenCV CONFIG REQUIRED)
+include("${CMAKE_CURRENT_LIST_DIR}/VisualSimTargets.cmake")
+check_required_components(VisualSim)
+~~~
+
+并在目标 CMakeLists.txt 中生成/安装：
+
+~~~cmake
+configure_package_config_file(
+  cmake/VisualSimConfig.cmake.in
+  "${CMAKE_CURRENT_BINARY_DIR}/VisualSimConfig.cmake"
+  INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/VisualSim")
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/VisualSimConfigVersion.cmake"
+  VERSION "${PROJECT_VERSION}" COMPATIBILITY SameMajorVersion)
+install(FILES
+  "${CMAKE_CURRENT_BINARY_DIR}/VisualSimConfig.cmake"
+  "${CMAKE_CURRENT_BINARY_DIR}/VisualSimConfigVersion.cmake"
+  DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/VisualSim")
+~~~
+
+由于公开 API 暴露 cv::Mat，OpenCV 必须由安装包向下游暴露为可解析依赖；其他 PUBLIC 链接依赖也必须具有相应 find_dependency，必须按最终 target_link_libraries 的 PUBLIC/PRIVATE 边界核查，不可凭该示例就声称已完成 V01。
+
+
 ## 4. 实施阶段
 
 | 阶段 | 任务 | 可核验交付 |
